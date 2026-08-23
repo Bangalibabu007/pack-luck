@@ -1,0 +1,1594 @@
+import React, { useState, useEffect, useMemo, useCallback } from "react";
+
+// ---------- constants ----------
+
+const RARITIES = ["Common", "Rare", "Elite", "Epic", "Legendary", "Icon"];
+
+const RARITY_COLOR = {
+  Common: "#8A8F98",
+  Rare: "#5E9FD4",
+  Elite: "#8B6FD9",
+  Epic: "#D467A8",
+  Legendary: "#D4A93E",
+  Icon: "#4FD1C5",
+};
+
+// Baseline "expected" drop distribution per pack tier — used to compute
+// how lucky an actual pull was relative to what the pack promises.
+const PACK_BASELINES = {
+  Bronze: { Common: 0.7, Rare: 0.25, Elite: 0.045, Epic: 0.005, Legendary: 0, Icon: 0 },
+  Silver: { Common: 0.5, Rare: 0.35, Elite: 0.12, Epic: 0.028, Legendary: 0.002, Icon: 0 },
+  Gold: { Common: 0.25, Rare: 0.4, Elite: 0.25, Epic: 0.09, Legendary: 0.009, Icon: 0.001 },
+  "Premium Gold": { Common: 0.1, Rare: 0.35, Elite: 0.35, Epic: 0.16, Legendary: 0.035, Icon: 0.005 },
+  Elite: { Common: 0, Rare: 0.2, Elite: 0.45, Epic: 0.27, Legendary: 0.07, Icon: 0.01 },
+  Ultimate: { Common: 0, Rare: 0, Elite: 0.35, Epic: 0.4, Legendary: 0.21, Icon: 0.04 },
+  Mega: { Common: 0, Rare: 0.15, Elite: 0.4, Epic: 0.32, Legendary: 0.11, Icon: 0.02 },
+  Special: { Common: 0, Rare: 0.1, Elite: 0.35, Epic: 0.38, Legendary: 0.15, Icon: 0.02 },
+  TOTY: { Common: 0, Rare: 0, Elite: 0.15, Epic: 0.45, Legendary: 0.32, Icon: 0.08 },
+  Custom: { Common: 0.4, Rare: 0.3, Elite: 0.2, Epic: 0.08, Legendary: 0.018, Icon: 0.002 },
+};
+
+const PACK_TYPES = Object.keys(PACK_BASELINES);
+
+const RARITY_VALUE_HINT = {
+  Common: 40,
+  Rare: 120,
+  Elite: 450,
+  Epic: 1800,
+  Legendary: 7000,
+  Icon: 22000,
+};
+
+const uid = () => Math.random().toString(36).slice(2, 10);
+
+// ---------- storage ----------
+
+const STORE_KEY = "fc-tracker:packs";
+
+async function loadPacks() {
+  try {
+    const res = await window.storage.get(STORE_KEY, false);
+    if (!res) return [];
+    return JSON.parse(res.value);
+  } catch {
+    return [];
+  }
+}
+
+async function savePacks(packs) {
+  try {
+    await window.storage.set(STORE_KEY, JSON.stringify(packs), false);
+  } catch (e) {
+    console.error("save failed", e);
+  }
+}
+
+const BUDGET_KEY = "fc-tracker:budget";
+
+async function loadBudget() {
+  try {
+    const res = await window.storage.get(BUDGET_KEY, false);
+    if (!res) return null;
+    return JSON.parse(res.value);
+  } catch {
+    return null;
+  }
+}
+
+async function saveBudget(budget) {
+  try {
+    await window.storage.set(BUDGET_KEY, JSON.stringify(budget), false);
+  } catch (e) {
+    console.error("save failed", e);
+  }
+}
+
+// ---------- luck math ----------
+
+// Given the rarities pulled from one pack and the pack's baseline odds,
+// score how "lucky" the pull was: sum of -log(probability) of each
+// rarity obtained, normalized against the pack's own expected entropy.
+function packLuckScore(packType, playersRarities) {
+  const baseline = PACK_BASELINES[packType] || PACK_BASELINES.Custom;
+  if (playersRarities.length === 0) return 50;
+
+  let surprisal = 0;
+  let maxSurprisal = 0;
+  playersRarities.forEach((r) => {
+    const p = Math.max(baseline[r] ?? 0.01, 0.002);
+    surprisal += -Math.log2(p);
+    // reference: surprisal of pulling the single rarest available slot
+    const rarest = Math.min(
+      ...Object.values(baseline).filter((v) => v > 0)
+    );
+    maxSurprisal += -Math.log2(Math.max(rarest, 0.002));
+  });
+
+  const ratio = maxSurprisal > 0 ? surprisal / maxSurprisal : 0.5;
+  // squash to 0-100, centered so "expected" pulls land near 45-55
+  const score = Math.min(100, Math.max(0, Math.round(ratio * 90 + 8)));
+  return score;
+}
+
+function formatHour(time24) {
+  if (!time24) return "";
+  const [h, m] = time24.split(":").map(Number);
+  const period = h >= 12 ? "PM" : "AM";
+  const h12 = h % 12 === 0 ? 12 : h % 12;
+  return `${h12}:${String(m).padStart(2, "0")} ${period}`;
+}
+
+const TIME_BUCKETS = [
+  { key: "night", label: "Late Night", range: "12–4 AM", test: (h) => h >= 0 && h < 4 },
+  { key: "earlyMorning", label: "Early Morning", range: "4–8 AM", test: (h) => h >= 4 && h < 8 },
+  { key: "morning", label: "Morning", range: "8 AM–12 PM", test: (h) => h >= 8 && h < 12 },
+  { key: "afternoon", label: "Afternoon", range: "12–4 PM", test: (h) => h >= 12 && h < 16 },
+  { key: "evening", label: "Evening", range: "4–8 PM", test: (h) => h >= 16 && h < 20 },
+  { key: "lateEvening", label: "Late Evening", range: "8 PM–12 AM", test: (h) => h >= 20 && h < 24 },
+];
+
+function bucketForTime(time24) {
+  if (!time24) return null;
+  const h = Number(time24.split(":")[0]);
+  return TIME_BUCKETS.find((b) => b.test(h)) || null;
+}
+
+const EPIC_PLUS = new Set(["Epic", "Legendary", "Icon"]);
+
+function isEpicPlusPull(pack) {
+  return pack.players.some((p) => EPIC_PLUS.has(p.rarity));
+}
+
+// Packs ordered oldest -> newest by date+time logged.
+function chronological(packs) {
+  return [...packs].sort((a, b) => {
+    const ta = new Date(`${a.date}T${a.time || "00:00"}`).getTime();
+    const tb = new Date(`${b.date}T${b.time || "00:00"}`).getTime();
+    return ta - tb;
+  });
+}
+
+// Pity/streak: how many packs since the last Epic+ pull, and the
+// historical average gap between Epic+ pulls for context.
+function computeStreak(packs) {
+  const ordered = chronological(packs);
+  if (ordered.length === 0) return { current: 0, avgGap: null, longestGap: 0 };
+
+  let current = 0;
+  for (let i = ordered.length - 1; i >= 0; i--) {
+    if (isEpicPlusPull(ordered[i])) break;
+    current++;
+  }
+
+  const gaps = [];
+  let sinceLast = 0;
+  ordered.forEach((p) => {
+    if (isEpicPlusPull(p)) {
+      gaps.push(sinceLast);
+      sinceLast = 0;
+    } else {
+      sinceLast++;
+    }
+  });
+
+  const avgGap = gaps.length ? Math.round((gaps.reduce((a, b) => a + b, 0) / gaps.length) * 10) / 10 : null;
+  const longestGap = gaps.length ? Math.max(...gaps, current) : current;
+
+  return { current, avgGap, longestGap };
+}
+
+// Dupe detection: how many times each player name has been pulled.
+function computeDupes(packs) {
+  const counts = new Map();
+  packs.forEach((p) => {
+    p.players.forEach((pl) => {
+      const key = pl.name.trim().toLowerCase();
+      if (!key) return;
+      if (!counts.has(key)) counts.set(key, { name: pl.name, count: 0, best: pl });
+      const entry = counts.get(key);
+      entry.count += 1;
+      if (pl.ovr > entry.best.ovr) entry.best = pl;
+    });
+  });
+  return Array.from(counts.values()).sort((a, b) => b.count - a.count);
+}
+
+// Achievement badges derived purely from logged pack history.
+function computeAchievements(packs) {
+  const totalPacks = packs.length;
+  const allPlayers = packs.flatMap((p) => p.players);
+  const totalGems = packs.reduce((s, p) => s + p.cost, 0);
+  const totalValue = packs.reduce((s, p) => s + p.totalValue, 0);
+  const uniqueNames = new Set(allPlayers.map((p) => p.name.trim().toLowerCase())).size;
+  const hasRarity = (r) => allPlayers.some((p) => p.rarity === r);
+  const streak = computeStreak(packs);
+
+  const badges = [
+    { key: "first-pack", label: "First Pack", desc: "Log your first pack opening", earned: totalPacks >= 1, icon: "📦" },
+    { key: "ten-packs", label: "Getting Serious", desc: "Log 10 pack openings", earned: totalPacks >= 10, icon: "🔟" },
+    { key: "fifty-packs", label: "Veteran Opener", desc: "Log 50 pack openings", earned: totalPacks >= 50, icon: "🏆" },
+    { key: "first-elite", label: "Elite Pull", desc: "Pull an Elite or better card", earned: hasRarity("Elite") || hasRarity("Epic") || hasRarity("Legendary") || hasRarity("Icon"), icon: "🟣" },
+    { key: "first-epic", label: "Epic Hunter", desc: "Pull an Epic or better card", earned: hasRarity("Epic") || hasRarity("Legendary") || hasRarity("Icon"), icon: "🎯" },
+    { key: "first-legendary", label: "Legendary Status", desc: "Pull a Legendary or Icon card", earned: hasRarity("Legendary") || hasRarity("Icon"), icon: "⭐" },
+    { key: "first-icon", label: "Icon Collector", desc: "Pull an Icon card", earned: hasRarity("Icon"), icon: "👑" },
+    { key: "big-spender", label: "Big Spender", desc: "Spend 5,000+ gems total", earned: totalGems >= 5000, icon: "💎" },
+    { key: "collector", label: "Collector", desc: "Own 20 unique players", earned: uniqueNames >= 20, icon: "📚" },
+    { key: "profit-master", label: "Profit Master", desc: "Positive profit after 10+ packs", earned: totalPacks >= 10 && totalValue - totalGems > 0, icon: "📈" },
+    { key: "dry-spell", label: "Survived the Drought", desc: "Go 15+ packs without Epic+", earned: streak.longestGap >= 15, icon: "🏜️" },
+  ];
+  return badges;
+}
+
+function luckLabel(score) {
+  if (score >= 85) return { label: "Blessed", emoji: "🔥", color: "#4FD1C5" };
+  if (score >= 65) return { label: "Lucky", emoji: "🙂", color: "#4FD1C5" };
+  if (score >= 40) return { label: "Average", emoji: "😐", color: "#D4A93E" };
+  if (score >= 20) return { label: "Unlucky", emoji: "😕", color: "#C4544A" };
+  return { label: "Rough Pull", emoji: "💀", color: "#C4544A" };
+}
+
+// Estimate a player's market value if not manually supplied.
+function estimateValue(ovr, rarity) {
+  const base = RARITY_VALUE_HINT[rarity] ?? 200;
+  const ovrMult = Math.pow(1.09, Math.max(0, ovr - 75));
+  return Math.round(base * ovrMult);
+}
+
+// ---------- small UI atoms ----------
+
+function StatCard({ label, value, sub, accent }) {
+  return (
+    <div style={styles.statCard}>
+      <div style={styles.statLabel}>{label}</div>
+      <div style={{ ...styles.statValue, color: accent || "#EDE7DA" }}>{value}</div>
+      {sub && <div style={styles.statSub}>{sub}</div>}
+    </div>
+  );
+}
+
+function RarityPill({ rarity }) {
+  const c = RARITY_COLOR[rarity] || "#8A8F98";
+  return (
+    <span
+      style={{
+        ...styles.pill,
+        color: c,
+        borderColor: c + "55",
+        background: c + "1A",
+      }}
+    >
+      {rarity}
+    </span>
+  );
+}
+
+function Dial({ score }) {
+  const { label, emoji, color } = luckLabel(score);
+  const circumference = 2 * Math.PI * 54;
+  const offset = circumference * (1 - score / 100);
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
+      <svg width="128" height="128" viewBox="0 0 128 128">
+        <circle cx="64" cy="64" r="54" fill="none" stroke="#1C2029" strokeWidth="10" />
+        <circle
+          cx="64"
+          cy="64"
+          r="54"
+          fill="none"
+          stroke={color}
+          strokeWidth="10"
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          transform="rotate(-90 64 64)"
+          style={{ transition: "stroke-dashoffset 0.6s ease, stroke 0.4s ease" }}
+        />
+        <text x="64" y="58" textAnchor="middle" fontSize="26" fontWeight="800" fill="#EDE7DA" fontFamily="Oswald, sans-serif">
+          {score}
+        </text>
+        <text x="64" y="78" textAnchor="middle" fontSize="10" fill="#8A8F98" fontFamily="Oswald, sans-serif" letterSpacing="1">
+          / 100
+        </text>
+      </svg>
+      <div>
+        <div style={{ fontSize: 22 }}>{emoji}</div>
+        <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 20, fontWeight: 700, color }}>
+          {label}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OddsBar({ packType }) {
+  const baseline = PACK_BASELINES[packType] || PACK_BASELINES.Custom;
+  const entries = RARITIES.map((r) => [r, baseline[r] ?? 0]).filter(([, v]) => v > 0);
+  return (
+    <div>
+      <div style={{ display: "flex", height: 14, borderRadius: 7, overflow: "hidden", border: "1px solid #262B36" }}>
+        {entries.map(([r, v]) => (
+          <div
+            key={r}
+            title={`${r}: ${(v * 100).toFixed(1)}%`}
+            style={{ width: `${v * 100}%`, background: RARITY_COLOR[r] }}
+          />
+        ))}
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 14px", marginTop: 10 }}>
+        {entries.map(([r, v]) => (
+          <div key={r} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#B9BFC9" }}>
+            <span style={{ width: 8, height: 8, borderRadius: 2, background: RARITY_COLOR[r] }} />
+            {r} <span style={{ color: "#5A6070" }}>{(v * 100).toFixed(1)}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ---------- main views ----------
+
+function EmptyState({ onAdd }) {
+  return (
+    <div style={styles.empty}>
+      <div style={styles.emptyBox}>📦</div>
+      <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 22, fontWeight: 700, marginTop: 18 }}>
+        No packs logged
+      </div>
+      <div style={{ color: "#8A8F98", marginTop: 8, maxWidth: 280, textAlign: "center", lineHeight: 1.5 }}>
+        Track every pack you open — see your real luck, drop odds, and the best time to spend gems.
+      </div>
+      <button style={styles.primaryBtn} onClick={onAdd}>
+        + Log Your First Pack
+      </button>
+    </div>
+  );
+}
+
+function AddPackFlow({ onSave, onCancel }) {
+  const [step, setStep] = useState(1);
+  const [packName, setPackName] = useState("");
+  const [packType, setPackType] = useState("Gold");
+  const [cost, setCost] = useState("");
+  const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
+  const [time, setTime] = useState(new Date().toTimeString().slice(0, 5));
+  const [notes, setNotes] = useState("");
+  const [players, setPlayers] = useState([
+    { id: uid(), name: "", ovr: "", position: "ST", rarity: "Elite", value: "" },
+  ]);
+
+  const addPlayer = () =>
+    setPlayers((p) => [...p, { id: uid(), name: "", ovr: "", position: "ST", rarity: "Elite", value: "" }]);
+
+  const updatePlayer = (id, field, val) =>
+    setPlayers((p) => p.map((pl) => (pl.id === id ? { ...pl, [field]: val } : pl)));
+
+  const removePlayer = (id) => setPlayers((p) => p.filter((pl) => pl.id !== id));
+
+  const canNext1 = packName.trim() && cost !== "" && Number(cost) > 0;
+  const canNext2 = players.every((p) => p.name.trim() && p.ovr !== "");
+
+  const totalValue = players.reduce((sum, p) => {
+    const v = p.value !== "" ? Number(p.value) : estimateValue(Number(p.ovr) || 75, p.rarity);
+    return sum + v;
+  }, 0);
+
+  const rarities = players.map((p) => p.rarity);
+  const luck = packLuckScore(packType, rarities);
+  const profit = totalValue - Number(cost || 0);
+
+  const handleSave = () => {
+    const pack = {
+      id: uid(),
+      packName: packName.trim(),
+      packType,
+      cost: Number(cost),
+      date,
+      time,
+      notes,
+      players: players.map((p) => ({
+        ...p,
+        ovr: Number(p.ovr),
+        value: p.value !== "" ? Number(p.value) : estimateValue(Number(p.ovr) || 75, p.rarity),
+      })),
+      luck,
+      totalValue,
+      loggedAt: new Date().toISOString(),
+    };
+    onSave(pack);
+  };
+
+  return (
+    <div>
+      <div style={styles.header}>
+        <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 26, fontWeight: 700 }}>Log Pack</div>
+        <div style={{ display: "flex", gap: 6 }}>
+          {[1, 2, 3].map((s) => (
+            <div
+              key={s}
+              style={{
+                width: 28,
+                height: 4,
+                borderRadius: 2,
+                background: s <= step ? "#D4A93E" : "#262B36",
+              }}
+            />
+          ))}
+        </div>
+      </div>
+
+      {step === 1 && (
+        <div style={styles.card}>
+          <Field label="Pack name">
+            <input
+              style={styles.input}
+              placeholder="e.g. TOTY Pack, Gold Pack #4"
+              value={packName}
+              onChange={(e) => setPackName(e.target.value)}
+            />
+          </Field>
+          <Field label="Pack type">
+            <div style={styles.grid3}>
+              {PACK_TYPES.map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setPackType(t)}
+                  style={{
+                    ...styles.chip,
+                    ...(packType === t ? styles.chipActive : {}),
+                  }}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+          </Field>
+          <Field label="Cost (gems)">
+            <input
+              style={styles.input}
+              type="number"
+              placeholder="e.g. 200"
+              value={cost}
+              onChange={(e) => setCost(e.target.value)}
+            />
+          </Field>
+          <div style={styles.grid2}>
+            <Field label="Date">
+              <input style={styles.input} type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            </Field>
+            <Field label="Time">
+              <input style={styles.input} type="time" value={time} onChange={(e) => setTime(e.target.value)} />
+            </Field>
+          </div>
+          <Field label="Notes (optional)">
+            <textarea
+              style={{ ...styles.input, height: 70, resize: "none" }}
+              placeholder="Any notes about this pack..."
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+            />
+          </Field>
+
+          <div style={styles.oddsPreview}>
+            <div style={{ fontSize: 12, color: "#8A8F98", marginBottom: 8, letterSpacing: 0.5 }}>
+              KNOWN DROP ODDS FOR {packType.toUpperCase()}
+            </div>
+            <OddsBar packType={packType} />
+          </div>
+
+          <div style={styles.footerRow}>
+            <button style={styles.ghostBtn} onClick={onCancel}>Cancel</button>
+            <button
+              style={{ ...styles.primaryBtn, opacity: canNext1 ? 1 : 0.4 }}
+              disabled={!canNext1}
+              onClick={() => setStep(2)}
+            >
+              Next →
+            </button>
+          </div>
+        </div>
+      )}
+
+      {step === 2 && (
+        <div style={styles.card}>
+          <div style={{ color: "#8A8F98", marginBottom: 14, fontSize: 13 }}>
+            Add the players you obtained from this pack.
+          </div>
+          {players.map((p, i) => (
+            <div key={p.id} style={styles.playerCard}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                <span style={{ color: "#8A8F98", fontSize: 13 }}>Player {i + 1}</span>
+                {players.length > 1 && (
+                  <button style={styles.linkBtn} onClick={() => removePlayer(p.id)}>Remove</button>
+                )}
+              </div>
+              <input
+                style={styles.input}
+                placeholder="Player name"
+                value={p.name}
+                onChange={(e) => updatePlayer(p.id, "name", e.target.value)}
+              />
+              <div style={styles.grid2}>
+                <div>
+                  <div style={styles.miniLabel}>OVR</div>
+                  <input
+                    style={styles.input}
+                    type="number"
+                    placeholder="e.g. 88"
+                    value={p.ovr}
+                    onChange={(e) => updatePlayer(p.id, "ovr", e.target.value)}
+                  />
+                </div>
+                <div>
+                  <div style={styles.miniLabel}>Position</div>
+                  <select
+                    style={styles.input}
+                    value={p.position}
+                    onChange={(e) => updatePlayer(p.id, "position", e.target.value)}
+                  >
+                    {["GK","CB","LB","RB","CDM","CM","CAM","LM","RM","LW","RW","ST","CF"].map((pos) => (
+                      <option key={pos} value={pos}>{pos}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div style={styles.grid2}>
+                <div>
+                  <div style={styles.miniLabel}>Rarity</div>
+                  <select
+                    style={styles.input}
+                    value={p.rarity}
+                    onChange={(e) => updatePlayer(p.id, "rarity", e.target.value)}
+                  >
+                    {RARITIES.map((r) => (
+                      <option key={r} value={r}>{r}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <div style={styles.miniLabel}>Market value (optional)</div>
+                  <input
+                    style={styles.input}
+                    type="number"
+                    placeholder={`~${estimateValue(Number(p.ovr) || 75, p.rarity)}`}
+                    value={p.value}
+                    onChange={(e) => updatePlayer(p.id, "value", e.target.value)}
+                  />
+                </div>
+              </div>
+              {p.name && p.ovr && (
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
+                  <div style={{ ...styles.ovrBadge, background: RARITY_COLOR[p.rarity] }}>{p.ovr}</div>
+                  <span style={{ fontWeight: 600 }}>{p.name}</span>
+                  <RarityPill rarity={p.rarity} />
+                </div>
+              )}
+            </div>
+          ))}
+          <button style={styles.dashedBtn} onClick={addPlayer}>+ Add Another Player</button>
+
+          <div style={styles.footerRow}>
+            <button style={styles.ghostBtn} onClick={() => setStep(1)}>← Back</button>
+            <button
+              style={{ ...styles.primaryBtn, opacity: canNext2 ? 1 : 0.4 }}
+              disabled={!canNext2}
+              onClick={() => setStep(3)}
+            >
+              Next →
+            </button>
+          </div>
+        </div>
+      )}
+
+      {step === 3 && (
+        <div style={styles.card}>
+          <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 20, fontWeight: 700, marginBottom: 4 }}>
+            {packName}
+          </div>
+          <div style={{ color: "#8A8F98", fontSize: 13, marginBottom: 16 }}>{packType} · {cost} gems · {date} {time && `at ${formatHour(time)}`}</div>
+
+          <div style={{ marginBottom: 18 }}>
+            {players.map((p) => (
+              <div key={p.id} style={styles.playerRow}>
+                <div style={{ ...styles.ovrBadge, background: RARITY_COLOR[p.rarity] }}>{p.ovr}</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600 }}>{p.name}</div>
+                  <div style={{ color: "#8A8F98", fontSize: 12 }}>{p.position}</div>
+                </div>
+                <RarityPill rarity={p.rarity} />
+              </div>
+            ))}
+          </div>
+
+          <div style={styles.card2}>
+            <div style={{ fontSize: 12, color: "#8A8F98", marginBottom: 12, letterSpacing: 0.5 }}>LUCK SCORE</div>
+            <Dial score={luck} />
+          </div>
+
+          <div style={{ ...styles.card2, marginTop: 12 }}>
+            <div style={{ fontSize: 12, color: "#8A8F98", letterSpacing: 0.5 }}>ESTIMATED PROFIT / LOSS</div>
+            <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 30, fontWeight: 700, color: profit >= 0 ? "#4FD1C5" : "#C4544A", marginTop: 4 }}>
+              {profit >= 0 ? "+" : ""}{profit.toLocaleString()} gems
+            </div>
+            <div style={{ color: "#5A6070", fontSize: 12, marginTop: 4 }}>
+              Value {totalValue.toLocaleString()} gems minus {Number(cost).toLocaleString()} cost
+            </div>
+          </div>
+
+          <div style={styles.footerRow}>
+            <button style={styles.ghostBtn} onClick={() => setStep(2)}>← Back</button>
+            <button style={styles.primaryBtn} onClick={handleSave}>✓ Save Pack Opening</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Field({ label, children }) {
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={styles.miniLabel}>{label}</div>
+      {children}
+    </div>
+  );
+}
+
+function Home({ packs, onAdd, budget, onOpenBudget }) {
+  const totalSpent = packs.reduce((s, p) => s + p.cost, 0);
+  const totalPlayers = packs.reduce((s, p) => s + p.players.length, 0);
+  const avgLuck = packs.length ? Math.round(packs.reduce((s, p) => s + p.luck, 0) / packs.length) : 0;
+
+  if (packs.length === 0) return <EmptyState onAdd={onAdd} />;
+
+  const recent = [...packs].sort((a, b) => new Date(b.loggedAt) - new Date(a.loggedAt)).slice(0, 5);
+  const streak = computeStreak(packs);
+
+  // budget usage for current period
+  let budgetInfo = null;
+  if (budget && budget.amount > 0) {
+    const now = new Date();
+    const cutoff = new Date(now);
+    if (budget.period === "weekly") cutoff.setDate(now.getDate() - 7);
+    else cutoff.setMonth(now.getMonth() - 1);
+    const spentInPeriod = packs
+      .filter((p) => new Date(`${p.date}T${p.time || "00:00"}`) >= cutoff)
+      .reduce((s, p) => s + p.cost, 0);
+    const pct = Math.min(100, Math.round((spentInPeriod / budget.amount) * 100));
+    budgetInfo = { spentInPeriod, pct, over: spentInPeriod > budget.amount };
+  }
+
+  return (
+    <div>
+      <div style={styles.header}>
+        <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 26, fontWeight: 700 }}>Overview</div>
+        <button style={styles.smallGoldBtn} onClick={onAdd}>+ Log Pack</button>
+      </div>
+
+      {budgetInfo && (
+        <div
+          onClick={onOpenBudget}
+          style={{
+            ...styles.card2,
+            marginBottom: 14,
+            border: `1px solid ${budgetInfo.over ? "#C4544A60" : "#26303655"}`,
+            background: budgetInfo.over ? "#C4544A14" : "#12151C",
+            cursor: "pointer",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#8A8F98", marginBottom: 8 }}>
+            <span>{budget.period === "weekly" ? "WEEKLY" : "MONTHLY"} BUDGET</span>
+            <span style={{ color: budgetInfo.over ? "#C4544A" : "#8A8F98" }}>
+              {budgetInfo.spentInPeriod.toLocaleString()} / {budget.amount.toLocaleString()} gems
+            </span>
+          </div>
+          <div style={{ height: 8, borderRadius: 4, background: "#1C2029", overflow: "hidden" }}>
+            <div
+              style={{
+                width: `${budgetInfo.pct}%`,
+                height: "100%",
+                background: budgetInfo.over ? "#C4544A" : budgetInfo.pct > 80 ? "#D4A93E" : "#4FD1C5",
+                transition: "width 0.4s ease",
+              }}
+            />
+          </div>
+          {budgetInfo.over && (
+            <div style={{ color: "#C4544A", fontSize: 12, marginTop: 8, fontWeight: 600 }}>
+              ⚠ Over budget by {(budgetInfo.spentInPeriod - budget.amount).toLocaleString()} gems
+            </div>
+          )}
+        </div>
+      )}
+
+      <div style={{ ...styles.card2, marginBottom: 14, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div>
+          <div style={{ fontSize: 12, color: "#8A8F98", letterSpacing: 0.5, marginBottom: 4 }}>PITY COUNTER</div>
+          <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 26, fontWeight: 700, color: streak.current === 0 ? "#4FD1C5" : "#EDE7DA" }}>
+            {streak.current}
+          </div>
+          <div style={{ color: "#5A6070", fontSize: 11 }}>
+            {streak.current === 0 ? "Epic+ on your last pack!" : `pack${streak.current === 1 ? "" : "s"} since last Epic+`}
+          </div>
+        </div>
+        {streak.avgGap !== null && (
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontSize: 12, color: "#8A8F98", letterSpacing: 0.5, marginBottom: 4 }}>YOUR AVG GAP</div>
+            <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 20, fontWeight: 700, color: "#D4A93E" }}>{streak.avgGap}</div>
+          </div>
+        )}
+      </div>
+
+      <div style={styles.grid2}>
+        <StatCard label="PACKS LOGGED" value={packs.length} />
+        <StatCard label="AVG LUCK" value={avgLuck} accent={luckLabel(avgLuck).color} />
+      </div>
+      <div style={styles.grid2}>
+        <StatCard label="GEMS SPENT" value={totalSpent.toLocaleString()} />
+        <StatCard label="PLAYERS FOUND" value={totalPlayers} />
+      </div>
+
+      <div style={{ fontSize: 12, color: "#8A8F98", letterSpacing: 0.5, margin: "22px 0 10px" }}>RECENT PULLS</div>
+      {recent.map((p) => (
+        <div key={p.id} style={styles.recentRow}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 600 }}>{p.packName}</div>
+            <div style={{ color: "#8A8F98", fontSize: 12 }}>{p.packType} · {p.date}</div>
+          </div>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ color: luckLabel(p.luck).color, fontWeight: 700, fontFamily: "Oswald, sans-serif" }}>
+              {p.luck}
+            </div>
+            <div style={{ fontSize: 11, color: "#5A6070" }}>{luckLabel(p.luck).label}</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function History({ packs, onDelete }) {
+  const [sorted] = useState(true);
+  const list = [...packs].sort((a, b) => new Date(b.loggedAt) - new Date(a.loggedAt));
+
+  if (packs.length === 0) return <EmptyState onAdd={() => {}} />;
+
+  return (
+    <div>
+      <div style={styles.header}>
+        <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 26, fontWeight: 700 }}>History</div>
+      </div>
+      {list.map((p) => (
+        <div key={p.id} style={styles.card}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 16 }}>{p.packName}</div>
+              <div style={{ color: "#8A8F98", fontSize: 12, marginTop: 2 }}>{p.packType} · {p.date}{p.time ? ` · ${formatHour(p.time)}` : ""} · {p.cost} gems</div>
+            </div>
+            <button style={styles.linkBtnRed} onClick={() => onDelete(p.id)}>Delete</button>
+          </div>
+          <div style={{ marginTop: 10 }}>
+            {p.players.map((pl) => (
+              <div key={pl.id} style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
+                <div style={{ ...styles.ovrBadge, background: RARITY_COLOR[pl.rarity], width: 32, height: 32, fontSize: 13 }}>{pl.ovr}</div>
+                <span style={{ fontSize: 14 }}>{pl.name}</span>
+                <RarityPill rarity={pl.rarity} />
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12, paddingTop: 12, borderTop: "1px solid #1C2029" }}>
+            <span style={{ color: luckLabel(p.luck).color, fontSize: 13, fontWeight: 600 }}>
+              {luckLabel(p.luck).emoji} {luckLabel(p.luck).label} ({p.luck}/100)
+            </span>
+            <span style={{ color: p.totalValue - p.cost >= 0 ? "#4FD1C5" : "#C4544A", fontSize: 13, fontWeight: 700 }}>
+              {p.totalValue - p.cost >= 0 ? "+" : ""}{(p.totalValue - p.cost).toLocaleString()} gems
+            </span>
+          </div>
+          {p.notes && <div style={{ color: "#8A8F98", fontSize: 12, marginTop: 8, fontStyle: "italic" }}>"{p.notes}"</div>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Players({ packs }) {
+  const [query, setQuery] = useState("");
+  const [rarityFilter, setRarityFilter] = useState("All");
+  const [dupesOnly, setDupesOnly] = useState(false);
+
+  const dupeCounts = useMemo(() => computeDupes(packs), [packs]);
+  const dupeMap = useMemo(() => {
+    const m = new Map();
+    dupeCounts.forEach((d) => m.set(d.name.toLowerCase(), d.count));
+    return m;
+  }, [dupeCounts]);
+
+  const allPlayers = useMemo(() => {
+    const map = new Map();
+    packs.forEach((p) => {
+      p.players.forEach((pl) => {
+        const key = pl.name.toLowerCase();
+        if (!map.has(key) || map.get(key).ovr < pl.ovr) {
+          map.set(key, pl);
+        }
+      });
+    });
+    return Array.from(map.values());
+  }, [packs]);
+
+  const totalDupes = dupeCounts.filter((d) => d.count > 1).length;
+
+  const filtered = allPlayers
+    .filter((p) => rarityFilter === "All" || p.rarity === rarityFilter)
+    .filter((p) => !dupesOnly || (dupeMap.get(p.name.toLowerCase()) || 0) > 1)
+    .filter((p) => p.name.toLowerCase().includes(query.toLowerCase()) || p.position.toLowerCase().includes(query.toLowerCase()))
+    .sort((a, b) => b.ovr - a.ovr);
+
+  const best = allPlayers.reduce((b, p) => (!b || p.ovr > b.ovr ? p : b), null);
+
+  return (
+    <div>
+      <div style={styles.header}>
+        <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 26, fontWeight: 700 }}>Collection</div>
+      </div>
+      <div style={{ color: "#8A8F98", fontSize: 13, marginBottom: 14 }}>
+        {allPlayers.length} players collected{totalDupes > 0 ? ` · ${totalDupes} duplicate${totalDupes > 1 ? "s" : ""}` : ""}
+      </div>
+
+      {best && (
+        <div style={{ ...styles.playerRow, border: "1px solid #D4A93E55", background: "#D4A93E0F", marginBottom: 16 }}>
+          <div style={{ ...styles.ovrBadge, background: "#D4A93E" }}>{best.ovr}</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 700 }}>{best.name} ⭐</div>
+            <div style={{ color: "#8A8F98", fontSize: 12 }}>{best.position} · {best.rarity} · Best OVR</div>
+          </div>
+        </div>
+      )}
+
+      <input
+        style={styles.input}
+        placeholder="Search by name or position..."
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+      />
+      <div style={{ display: "flex", gap: 8, overflowX: "auto", margin: "12px 0" }}>
+        {["All", ...RARITIES].map((r) => (
+          <button
+            key={r}
+            onClick={() => setRarityFilter(r)}
+            style={{ ...styles.chip, whiteSpace: "nowrap", ...(rarityFilter === r ? styles.chipActive : {}) }}
+          >
+            {r}
+          </button>
+        ))}
+        <button
+          onClick={() => setDupesOnly((d) => !d)}
+          style={{ ...styles.chip, whiteSpace: "nowrap", ...(dupesOnly ? styles.chipActive : {}) }}
+        >
+          Dupes Only
+        </button>
+      </div>
+
+      {filtered.map((p, i) => {
+        const count = dupeMap.get(p.name.toLowerCase()) || 1;
+        return (
+          <div key={i} style={styles.playerRow}>
+            <div style={{ ...styles.ovrBadge, background: RARITY_COLOR[p.rarity] }}>{p.ovr}</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 600 }}>{p.name}</div>
+              <div style={{ color: "#8A8F98", fontSize: 12 }}>{p.position}</div>
+            </div>
+            {count > 1 && (
+              <span style={{ ...styles.pill, color: "#D4A93E", borderColor: "#D4A93E55", background: "#D4A93E1A", marginRight: 4 }}>
+                x{count}
+              </span>
+            )}
+            <RarityPill rarity={p.rarity} />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function Stats({ packs, onNavigate }) {
+  const [range, setRange] = useState("All Time");
+
+  const filteredPacks = useMemo(() => {
+    if (range === "All Time") return packs;
+    const days = range === "7 Days" ? 7 : 30;
+    const cutoff = Date.now() - days * 86400000;
+    return packs.filter((p) => new Date(p.loggedAt).getTime() >= cutoff);
+  }, [packs, range]);
+
+  const gemsSpent = filteredPacks.reduce((s, p) => s + p.cost, 0);
+  const playersFound = filteredPacks.reduce((s, p) => s + p.players.length, 0);
+  const bestOvr = filteredPacks.reduce((m, p) => Math.max(m, ...p.players.map((pl) => pl.ovr)), 0);
+  const avgOvr = playersFound
+    ? Math.round(filteredPacks.reduce((s, p) => s + p.players.reduce((a, pl) => a + pl.ovr, 0), 0) / playersFound)
+    : 0;
+  const estValue = filteredPacks.reduce((s, p) => s + p.totalValue, 0);
+  const profit = estValue - gemsSpent;
+
+  // most successful pack type by avg OVR
+  const byType = {};
+  filteredPacks.forEach((p) => {
+    if (!byType[p.packType]) byType[p.packType] = { count: 0, ovrSum: 0, players: 0 };
+    byType[p.packType].count += 1;
+    byType[p.packType].ovrSum += p.players.reduce((a, pl) => a + pl.ovr, 0);
+    byType[p.packType].players += p.players.length;
+  });
+  const bestType = Object.entries(byType)
+    .map(([type, d]) => ({ type, openings: d.count, avgOvr: d.players ? Math.round(d.ovrSum / d.players) : 0 }))
+    .sort((a, b) => b.avgOvr - a.avgOvr)[0];
+
+  // best time to open: day-of-week with highest average luck
+  const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const byDay = {};
+  packs.forEach((p) => {
+    const d = new Date(p.date).getDay();
+    if (!byDay[d]) byDay[d] = { sum: 0, count: 0 };
+    byDay[d].sum += p.luck;
+    byDay[d].count += 1;
+  });
+  const dayStats = Object.entries(byDay)
+    .map(([d, v]) => ({ day: dayNames[d], avgLuck: Math.round(v.sum / v.count), count: v.count }))
+    .sort((a, b) => b.avgLuck - a.avgLuck);
+  const bestDay = dayStats.find((d) => d.count >= 1);
+
+  // best / worst time-of-day bucket by average luck
+  const byBucket = {};
+  packs.forEach((p) => {
+    const bucket = bucketForTime(p.time);
+    if (!bucket) return;
+    if (!byBucket[bucket.key]) byBucket[bucket.key] = { sum: 0, count: 0, label: bucket.label, range: bucket.range };
+    byBucket[bucket.key].sum += p.luck;
+    byBucket[bucket.key].count += 1;
+  });
+  const bucketStats = Object.values(byBucket)
+    .map((b) => ({ ...b, avgLuck: Math.round(b.sum / b.count) }))
+    .sort((a, b) => b.avgLuck - a.avgLuck);
+  const bestBucket = bucketStats[0];
+  const worstBucket = bucketStats.length > 1 ? bucketStats[bucketStats.length - 1] : null;
+
+  // chance of pulling Epic+ this session, based on logged pack types opened
+  const epicPlusChance = useMemo(() => {
+    if (filteredPacks.length === 0) return null;
+    const typeCounts = {};
+    filteredPacks.forEach((p) => (typeCounts[p.packType] = (typeCounts[p.packType] || 0) + 1));
+    let weighted = 0;
+    let total = 0;
+    Object.entries(typeCounts).forEach(([type, count]) => {
+      const b = PACK_BASELINES[type] || PACK_BASELINES.Custom;
+      const chance = (b.Epic || 0) + (b.Legendary || 0) + (b.Icon || 0);
+      weighted += chance * count;
+      total += count;
+    });
+    return total ? weighted / total : 0;
+  }, [filteredPacks]);
+
+  return (
+    <div>
+      <div style={styles.header}>
+        <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 26, fontWeight: 700 }}>Statistics</div>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 18 }}>
+        <button style={styles.navLinkCard} onClick={() => onNavigate("achievements")}>
+          <span>🏆 Achievements</span>
+          <span style={{ color: "#5A6070" }}>→</span>
+        </button>
+        <button style={styles.navLinkCard} onClick={() => onNavigate("compare")}>
+          <span>⚖ Pack Comparison</span>
+          <span style={{ color: "#5A6070" }}>→</span>
+        </button>
+        <button style={styles.navLinkCard} onClick={() => onNavigate("budget")}>
+          <span>💎 Budget Settings</span>
+          <span style={{ color: "#5A6070" }}>→</span>
+        </button>
+      </div>
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
+        {["7 Days", "30 Days", "All Time"].map((r) => (
+          <button
+            key={r}
+            onClick={() => setRange(r)}
+            style={{ ...styles.chip, flex: 1, ...(range === r ? styles.chipActive : {}) }}
+          >
+            {r}
+          </button>
+        ))}
+      </div>
+
+      <div style={styles.grid2}>
+        <StatCard label="PACKS OPENED" value={filteredPacks.length} />
+        <StatCard label="GEMS SPENT" value={gemsSpent.toLocaleString()} />
+      </div>
+      <div style={styles.grid2}>
+        <StatCard label="PLAYERS FOUND" value={playersFound} />
+        <StatCard label="BEST OVR" value={bestOvr || "—"} />
+      </div>
+      <div style={styles.grid2}>
+        <StatCard label="AVG OVR" value={avgOvr || "—"} />
+        <StatCard label="EST. VALUE" value={estValue.toLocaleString()} />
+      </div>
+
+      <div style={{ ...styles.card2, marginTop: 4, background: profit >= 0 ? "#4FD1C50F" : "#C4544A14", border: `1px solid ${profit >= 0 ? "#4FD1C540" : "#C4544A40"}` }}>
+        <div style={{ fontSize: 12, color: "#8A8F98", letterSpacing: 0.5 }}>TOTAL PROFIT / LOSS</div>
+        <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 30, fontWeight: 700, color: profit >= 0 ? "#4FD1C5" : "#C4544A" }}>
+          {profit >= 0 ? "+" : ""}{profit.toLocaleString()}
+        </div>
+        <div style={{ color: "#5A6070", fontSize: 12 }}>Estimated value obtained minus gems spent</div>
+      </div>
+
+      {epicPlusChance !== null && (
+        <div style={{ ...styles.card2, marginTop: 12 }}>
+          <div style={{ fontSize: 12, color: "#8A8F98", letterSpacing: 0.5, marginBottom: 6 }}>
+            YOUR EPIC+ PULL RATE (based on packs opened)
+          </div>
+          <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 26, fontWeight: 700, color: "#D4A93E" }}>
+            {(epicPlusChance * 100).toFixed(1)}%
+          </div>
+          <div style={{ color: "#5A6070", fontSize: 12 }}>chance per pack across the types you've logged</div>
+        </div>
+      )}
+
+      {bestType && (
+        <>
+          <div style={{ fontSize: 12, color: "#8A8F98", letterSpacing: 0.5, margin: "22px 0 10px" }}>MOST SUCCESSFUL PACK TYPE</div>
+          <div style={styles.card2}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 16 }}>{bestType.type}</div>
+                <div style={{ color: "#8A8F98", fontSize: 12 }}>{bestType.openings} opening{bestType.openings > 1 ? "s" : ""}</div>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 22, fontWeight: 700, color: "#D4A93E" }}>{bestType.avgOvr}</div>
+                <div style={{ color: "#5A6070", fontSize: 11 }}>Avg OVR</div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {bestDay && dayStats.length > 1 && (
+        <>
+          <div style={{ fontSize: 12, color: "#8A8F98", letterSpacing: 0.5, margin: "22px 0 10px" }}>BEST DAY TO OPEN (BY YOUR HISTORY)</div>
+          <div style={styles.card2}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div style={{ fontWeight: 700, fontSize: 18 }}>{bestDay.day}</div>
+              <div style={{ color: luckLabel(bestDay.avgLuck).color, fontWeight: 700 }}>{bestDay.avgLuck} avg luck</div>
+            </div>
+            <div style={{ color: "#5A6070", fontSize: 11, marginTop: 4 }}>
+              Based on {bestDay.count} pack{bestDay.count > 1 ? "s" : ""} opened this day — log more to sharpen this.
+            </div>
+          </div>
+        </>
+      )}
+
+      {bestBucket && (
+        <>
+          <div style={{ fontSize: 12, color: "#8A8F98", letterSpacing: 0.5, margin: "22px 0 10px" }}>BEST & WORST TIME TO OPEN</div>
+          <div style={styles.grid2}>
+            <div style={{ ...styles.card2, flex: 1, border: "1px solid #4FD1C540", background: "#4FD1C50F" }}>
+              <div style={{ fontSize: 11, color: "#4FD1C5", letterSpacing: 0.5, marginBottom: 4 }}>✓ BEST</div>
+              <div style={{ fontWeight: 700, fontSize: 16 }}>{bestBucket.label}</div>
+              <div style={{ color: "#8A8F98", fontSize: 12, marginBottom: 8 }}>{bestBucket.range}</div>
+              <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 22, fontWeight: 700, color: "#4FD1C5" }}>
+                {bestBucket.avgLuck}
+              </div>
+              <div style={{ color: "#5A6070", fontSize: 11 }}>avg luck · {bestBucket.count} pack{bestBucket.count > 1 ? "s" : ""}</div>
+            </div>
+            {worstBucket && (
+              <div style={{ ...styles.card2, flex: 1, border: "1px solid #C4544A40", background: "#C4544A14" }}>
+                <div style={{ fontSize: 11, color: "#C4544A", letterSpacing: 0.5, marginBottom: 4 }}>✕ WORST</div>
+                <div style={{ fontWeight: 700, fontSize: 16 }}>{worstBucket.label}</div>
+                <div style={{ color: "#8A8F98", fontSize: 12, marginBottom: 8 }}>{worstBucket.range}</div>
+                <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 22, fontWeight: 700, color: "#C4544A" }}>
+                  {worstBucket.avgLuck}
+                </div>
+                <div style={{ color: "#5A6070", fontSize: 11 }}>avg luck · {worstBucket.count} pack{worstBucket.count > 1 ? "s" : ""}</div>
+              </div>
+            )}
+          </div>
+          <div style={{ color: "#5A6070", fontSize: 11, marginTop: 4 }}>
+            Based on the time you logged with each pack — six 4-hour windows across the day. Log more packs across different times to sharpen this.
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function SubviewHeader({ title, onBack }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 18 }}>
+      <button style={styles.backBtn} onClick={onBack}>←</button>
+      <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 24, fontWeight: 700 }}>{title}</div>
+    </div>
+  );
+}
+
+function Achievements({ packs, onBack }) {
+  const badges = computeAchievements(packs);
+  const earnedCount = badges.filter((b) => b.earned).length;
+
+  return (
+    <div>
+      <SubviewHeader title="Achievements" onBack={onBack} />
+      <div style={{ color: "#8A8F98", fontSize: 13, marginBottom: 16 }}>
+        {earnedCount} of {badges.length} unlocked
+      </div>
+      {badges.map((b) => (
+        <div
+          key={b.key}
+          style={{
+            ...styles.card2,
+            marginBottom: 10,
+            display: "flex",
+            alignItems: "center",
+            gap: 14,
+            opacity: b.earned ? 1 : 0.45,
+            border: b.earned ? "1px solid #D4A93E45" : "1px solid #1C2029",
+            background: b.earned ? "#D4A93E0C" : "#12151C",
+          }}
+        >
+          <div style={{ fontSize: 28 }}>{b.icon}</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 700, fontSize: 15 }}>{b.label}</div>
+            <div style={{ color: "#8A8F98", fontSize: 12 }}>{b.desc}</div>
+          </div>
+          {b.earned && <div style={{ color: "#D4A93E", fontSize: 18 }}>✓</div>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PackCompare({ packs, onBack }) {
+  const [selected, setSelected] = useState(["Gold", "Elite"]);
+
+  const toggle = (type) => {
+    setSelected((s) => {
+      if (s.includes(type)) return s.filter((t) => t !== type);
+      if (s.length >= 3) return s;
+      return [...s, type];
+    });
+  };
+
+  const statsFor = (type) => {
+    const relevant = packs.filter((p) => p.packType === type);
+    const players = relevant.flatMap((p) => p.players);
+    const avgOvr = players.length ? Math.round(players.reduce((a, p) => a + p.ovr, 0) / players.length) : null;
+    const spent = relevant.reduce((s, p) => s + p.cost, 0);
+    const value = relevant.reduce((s, p) => s + p.totalValue, 0);
+    const b = PACK_BASELINES[type];
+    const epicPlusOdds = (b.Epic || 0) + (b.Legendary || 0) + (b.Icon || 0);
+    return { openings: relevant.length, avgOvr, spent, profit: value - spent, epicPlusOdds };
+  };
+
+  return (
+    <div>
+      <SubviewHeader title="Pack Comparison" onBack={onBack} />
+      <div style={{ color: "#8A8F98", fontSize: 13, marginBottom: 12 }}>Pick up to 3 pack types to compare.</div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 20 }}>
+        {PACK_TYPES.map((t) => (
+          <button
+            key={t}
+            onClick={() => toggle(t)}
+            style={{ ...styles.chip, ...(selected.includes(t) ? styles.chipActive : {}) }}
+          >
+            {t}
+          </button>
+        ))}
+      </div>
+
+      {selected.map((type) => {
+        const s = statsFor(type);
+        return (
+          <div key={type} style={{ ...styles.card, marginBottom: 14 }}>
+            <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 10 }}>{type}</div>
+            <OddsBar packType={type} />
+            <div style={{ display: "flex", gap: 20, marginTop: 14, flexWrap: "wrap" }}>
+              <div>
+                <div style={styles.miniLabel}>EPIC+ ODDS</div>
+                <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 18, fontWeight: 700, color: "#D4A93E" }}>
+                  {(s.epicPlusOdds * 100).toFixed(1)}%
+                </div>
+              </div>
+              <div>
+                <div style={styles.miniLabel}>YOUR OPENINGS</div>
+                <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 18, fontWeight: 700 }}>{s.openings}</div>
+              </div>
+              <div>
+                <div style={styles.miniLabel}>YOUR AVG OVR</div>
+                <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 18, fontWeight: 700 }}>{s.avgOvr ?? "—"}</div>
+              </div>
+              <div>
+                <div style={styles.miniLabel}>YOUR PROFIT</div>
+                <div style={{ fontFamily: "Oswald, sans-serif", fontSize: 18, fontWeight: 700, color: s.openings ? (s.profit >= 0 ? "#4FD1C5" : "#C4544A") : "#5A6070" }}>
+                  {s.openings ? `${s.profit >= 0 ? "+" : ""}${s.profit.toLocaleString()}` : "—"}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function BudgetSettings({ budget, onSave, onBack }) {
+  const [amount, setAmount] = useState(budget ? String(budget.amount) : "");
+  const [period, setPeriod] = useState(budget ? budget.period : "weekly");
+
+  const handleSave = () => {
+    const n = Number(amount);
+    if (n > 0) onSave({ amount: n, period });
+    else onSave(null);
+    onBack();
+  };
+
+  return (
+    <div>
+      <SubviewHeader title="Budget Settings" onBack={onBack} />
+      <div style={styles.card}>
+        <Field label="Gem budget">
+          <input
+            style={styles.input}
+            type="number"
+            placeholder="e.g. 2000"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+          />
+        </Field>
+        <Field label="Period">
+          <div style={{ display: "flex", gap: 8 }}>
+            {["weekly", "monthly"].map((p) => (
+              <button
+                key={p}
+                onClick={() => setPeriod(p)}
+                style={{ ...styles.chip, flex: 1, textTransform: "capitalize", ...(period === p ? styles.chipActive : {}) }}
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+        </Field>
+        <div style={{ color: "#5A6070", fontSize: 12, marginBottom: 16 }}>
+          You'll see a progress bar and an alert on your Home screen when you're close to or over this limit. Leave the amount empty and save to remove your budget.
+        </div>
+        <button style={{ ...styles.primaryBtn, width: "100%" }} onClick={handleSave}>Save Budget</button>
+      </div>
+    </div>
+  );
+}
+
+// ---------- app shell ----------
+
+const TABS = [
+  { key: "home", label: "Home", icon: "⌂" },
+  { key: "add", label: "Add Pack", icon: "+" },
+  { key: "history", label: "History", icon: "↻" },
+  { key: "players", label: "Players", icon: "◈" },
+  { key: "stats", label: "Stats", icon: "▤" },
+];
+
+export default function App() {
+  const [tab, setTab] = useState("home");
+  const [subview, setSubview] = useState(null);
+  const [packs, setPacks] = useState([]);
+  const [budget, setBudget] = useState(null);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    Promise.all([loadPacks(), loadBudget()]).then(([p, b]) => {
+      setPacks(p);
+      setBudget(b);
+      setLoaded(true);
+    });
+  }, []);
+
+  const persist = useCallback((next) => {
+    setPacks(next);
+    savePacks(next);
+  }, []);
+
+  const handleAddPack = (pack) => {
+    persist([...packs, pack]);
+    setTab("home");
+  };
+
+  const handleDelete = (id) => {
+    persist(packs.filter((p) => p.id !== id));
+  };
+
+  const handleSaveBudget = (b) => {
+    setBudget(b);
+    saveBudget(b);
+  };
+
+  const goTab = (t) => {
+    setSubview(null);
+    setTab(t);
+  };
+
+  return (
+    <div style={styles.app}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;700;800&family=Inter:wght@400;500;600&display=swap');
+        * { box-sizing: border-box; font-family: 'Inter', sans-serif; }
+        ::placeholder { color: #4A505C; }
+        input:focus, select:focus, textarea:focus { outline: none; border-color: #D4A93E !important; }
+        button { cursor: pointer; border: none; font-family: 'Inter', sans-serif; }
+      `}</style>
+      <div style={styles.screen}>
+        {!loaded ? (
+          <div style={{ padding: 40, textAlign: "center", color: "#5A6070" }}>Loading…</div>
+        ) : (
+          <div style={styles.content}>
+            {subview === "achievements" && <Achievements packs={packs} onBack={() => setSubview(null)} />}
+            {subview === "compare" && <PackCompare packs={packs} onBack={() => setSubview(null)} />}
+            {subview === "budget" && (
+              <BudgetSettings budget={budget} onSave={handleSaveBudget} onBack={() => setSubview(null)} />
+            )}
+            {!subview && tab === "home" && (
+              <Home packs={packs} onAdd={() => goTab("add")} budget={budget} onOpenBudget={() => setSubview("budget")} />
+            )}
+            {!subview && tab === "add" && (
+              <AddPackFlow onSave={handleAddPack} onCancel={() => goTab("home")} />
+            )}
+            {!subview && tab === "history" && <History packs={packs} onDelete={handleDelete} />}
+            {!subview && tab === "players" && <Players packs={packs} />}
+            {!subview && tab === "stats" && <Stats packs={packs} onNavigate={setSubview} />}
+          </div>
+        )}
+
+        <div style={styles.nav}>
+          {TABS.map((t) => (
+            <button
+              key={t.key}
+              onClick={() => goTab(t.key)}
+              style={{ ...styles.navBtn, color: !subview && tab === t.key ? "#D4A93E" : "#5A6070" }}
+            >
+              <div style={{ fontSize: 18 }}>{t.icon}</div>
+              <div style={{ fontSize: 10, marginTop: 2, fontWeight: 600 }}>{t.label}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------- styles ----------
+
+const styles = {
+  navLinkCard: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    background: "#12151C",
+    border: "1px solid #1C2029",
+    borderRadius: 14,
+    padding: "14px 16px",
+    color: "#EDE7DA",
+    fontSize: 14,
+    fontWeight: 600,
+    width: "100%",
+  },
+  backBtn: {
+    background: "#12151C",
+    border: "1px solid #1C2029",
+    color: "#EDE7DA",
+    borderRadius: 10,
+    width: 36,
+    height: 36,
+    fontSize: 16,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  app: {
+    minHeight: "100vh",
+    background: "#0B0D12",
+    display: "flex",
+    justifyContent: "center",
+    padding: "0",
+  },
+  screen: {
+    width: "100%",
+    maxWidth: 460,
+    minHeight: "100vh",
+    background: "#0B0D12",
+    color: "#EDE7DA",
+    display: "flex",
+    flexDirection: "column",
+  },
+  content: {
+    flex: 1,
+    padding: "20px 16px 90px",
+    overflowY: "auto",
+  },
+  header: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 18,
+  },
+  nav: {
+    position: "sticky",
+    bottom: 0,
+    display: "flex",
+    background: "#12151C",
+    borderTop: "1px solid #1C2029",
+    padding: "10px 4px 14px",
+  },
+  navBtn: {
+    flex: 1,
+    background: "none",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    padding: "4px 0",
+  },
+  card: {
+    background: "#12151C",
+    border: "1px solid #1C2029",
+    borderRadius: 16,
+    padding: 18,
+    marginBottom: 14,
+  },
+  card2: {
+    background: "#12151C",
+    border: "1px solid #1C2029",
+    borderRadius: 16,
+    padding: 16,
+  },
+  statCard: {
+    background: "#12151C",
+    border: "1px solid #1C2029",
+    borderRadius: 14,
+    padding: "14px 16px",
+    flex: 1,
+  },
+  statLabel: { fontSize: 11, color: "#5A6070", letterSpacing: 0.5, marginBottom: 6 },
+  statValue: { fontFamily: "Oswald, sans-serif", fontSize: 24, fontWeight: 700 },
+  statSub: { fontSize: 11, color: "#5A6070", marginTop: 2 },
+  grid2: { display: "flex", gap: 10, marginBottom: 10 },
+  grid3: { display: "flex", flexWrap: "wrap", gap: 8 },
+  input: {
+    width: "100%",
+    background: "#0B0D12",
+    border: "1px solid #262B36",
+    borderRadius: 12,
+    padding: "12px 14px",
+    color: "#EDE7DA",
+    fontSize: 14,
+    marginBottom: 4,
+  },
+  miniLabel: { fontSize: 11, color: "#8A8F98", letterSpacing: 0.5, marginBottom: 6, marginTop: 10 },
+  chip: {
+    background: "#12151C",
+    border: "1px solid #262B36",
+    color: "#B9BFC9",
+    borderRadius: 10,
+    padding: "9px 14px",
+    fontSize: 13,
+    fontWeight: 500,
+  },
+  chipActive: {
+    background: "#D4A93E1A",
+    border: "1px solid #D4A93E",
+    color: "#D4A93E",
+  },
+  primaryBtn: {
+    background: "#D4A93E",
+    color: "#0B0D12",
+    fontWeight: 700,
+    fontSize: 14,
+    borderRadius: 12,
+    padding: "14px 22px",
+    flex: 1,
+  },
+  smallGoldBtn: {
+    background: "#D4A93E1A",
+    border: "1px solid #D4A93E",
+    color: "#D4A93E",
+    fontWeight: 600,
+    fontSize: 13,
+    borderRadius: 10,
+    padding: "8px 14px",
+  },
+  ghostBtn: {
+    background: "transparent",
+    border: "1px solid #262B36",
+    color: "#B9BFC9",
+    fontWeight: 600,
+    fontSize: 14,
+    borderRadius: 12,
+    padding: "14px 20px",
+  },
+  dashedBtn: {
+    width: "100%",
+    background: "transparent",
+    border: "1.5px dashed #333A47",
+    color: "#8A8F98",
+    borderRadius: 12,
+    padding: "14px",
+    fontSize: 13,
+    marginTop: 6,
+  },
+  linkBtn: { background: "none", color: "#C4544A", fontSize: 12, fontWeight: 600 },
+  linkBtnRed: { background: "none", color: "#C4544A", fontSize: 12, fontWeight: 600 },
+  footerRow: { display: "flex", gap: 10, marginTop: 20 },
+  pill: {
+    fontSize: 11,
+    fontWeight: 700,
+    padding: "3px 10px",
+    borderRadius: 8,
+    border: "1px solid",
+    letterSpacing: 0.3,
+  },
+  ovrBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontWeight: 800,
+    fontSize: 15,
+    color: "#0B0D12",
+    fontFamily: "Oswald, sans-serif",
+    flexShrink: 0,
+  },
+  playerCard: {
+    background: "#0B0D12",
+    border: "1px solid #1C2029",
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 12,
+  },
+  playerRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+    background: "#12151C",
+    border: "1px solid #1C2029",
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 8,
+  },
+  recentRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: "12px 0",
+    borderBottom: "1px solid #1C2029",
+  },
+  oddsPreview: {
+    background: "#0B0D12",
+    border: "1px solid #1C2029",
+    borderRadius: 12,
+    padding: 14,
+    marginTop: 6,
+  },
+  empty: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "80px 20px",
+  },
+  emptyBox: {
+    width: 72,
+    height: 72,
+    borderRadius: 18,
+    background: "#D4A93E14",
+    border: "1px solid #D4A93E40",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: 30,
+  },
+};
