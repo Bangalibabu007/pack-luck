@@ -1,0 +1,1279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FC TeamRank - Squad Rating & Analysis</title>
+    <style>
+        :root {
+            --bg-primary: #0a0a0f;
+            --bg-secondary: #111118;
+            --bg-card: rgba(22, 22, 31, 0.85);
+            --bg-card-hover: rgba(30, 30, 42, 0.9);
+            --border: #2a2a3a;
+            --border-light: #3a3a4a;
+            --text-primary: #e8e8f0;
+            --text-secondary: #a0a0b8;
+            --text-muted: #6a6a80;
+            --accent: #6c5ce7;
+            --accent2: #4facfe;
+            --accent-glow: rgba(108, 92, 231, 0.3);
+            --danger: #e74c3c;
+            --success: #2ecc71;
+            --warning: #f39c12;
+            --radius: 12px;
+            --radius-sm: 8px;
+            --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            --transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            --shadow: 0 4px 24px rgba(0, 0, 0, 0.4);
+            --shadow-lg: 0 8px 40px rgba(0, 0, 0, 0.6);
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: var(--font);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #3a3a4a; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #4a4a5a; }
+
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+
+        /* Navigation */
+        .nav-bar {
+            background: rgba(10, 10, 15, 0.92);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border);
+            padding: 0 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            height: 60px;
+        }
+        .nav-logo {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 700;
+            font-size: 22px;
+            letter-spacing: -0.5px;
+            color: var(--text-primary);
+            text-decoration: none;
+        }
+        .nav-logo .logo-icon {
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, #a78bfa, #6c5ce7);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: #fff;
+        }
+        .nav-links {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .nav-links a {
+            padding: 8px 16px;
+            border-radius: 8px;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            transition: var(--transition);
+            cursor: pointer;
+        }
+        .nav-links a:hover, .nav-links a.active {
+            background: var(--bg-panel);
+            color: var(--text-primary);
+        }
+        .nav-links a.active {
+            background: var(--accent);
+            color: #fff;
+        }
+
+        /* Cards */
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            padding: 20px;
+            margin-bottom: 20px;
+            backdrop-filter: blur(10px);
+            box-shadow: var(--shadow);
+            transition: var(--transition);
+        }
+        .card:hover {
+            border-color: var(--border-light);
+            box-shadow: var(--shadow-lg);
+        }
+        .card-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .card-title .icon {
+            font-size: 20px;
+        }
+
+        /* Buttons */
+        .btn {
+            padding: 10px 20px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--bg-panel);
+            color: var(--text-primary);
+            font-weight: 500;
+            cursor: pointer;
+            transition: var(--transition);
+            font-size: 14px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .btn:hover {
+            background: var(--bg-panel-hover);
+            border-color: var(--border-light);
+        }
+        .btn-primary {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: #fff;
+        }
+        .btn-primary:hover {
+            background: var(--accent-hover);
+            border-color: var(--accent-hover);
+        }
+        .btn-sm { padding: 6px 12px; font-size: 12px; }
+
+        /* Inputs */
+        input, select, textarea {
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text-primary);
+            padding: 10px 12px;
+            font-size: 14px;
+            transition: var(--transition);
+            outline: none;
+            width: 100%;
+            font-family: var(--font);
+        }
+        input:focus, select:focus, textarea:focus {
+            border-color: var(--accent);
+        }
+        label {
+            display: block;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+        }
+        .form-group { margin-bottom: 16px; }
+
+        /* Grid */
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+        .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+        @media (max-width: 900px) {
+            .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+        }
+
+        /* Score Circle */
+        .score-circle {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            background: conic-gradient(var(--accent) var(--score-angle, 0deg), #2a2a3a 0deg);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            margin: 0 auto;
+        }
+        .score-circle .score-inner {
+            width: 90px;
+            height: 90px;
+            border-radius: 50%;
+            background: var(--bg-card);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        .score-circle .score-number {
+            font-size: 32px;
+            font-weight: 700;
+            color: var(--text-primary);
+            line-height: 1;
+        }
+        .score-circle .score-label {
+            font-size: 11px;
+            color: var(--text-secondary);
+        }
+
+        /* Pitch */
+        .pitch {
+            position: relative;
+            width: 100%;
+            max-width: 600px;
+            margin: 0 auto;
+            aspect-ratio: 3/4;
+            background: linear-gradient(180deg, #1a4a1a 0%, #0d330d 100%);
+            border-radius: 8px;
+            border: 2px solid #2a5a2a;
+            overflow: hidden;
+        }
+        .pitch-lines {
+            position: absolute;
+            inset: 0;
+            background: 
+                linear-gradient(to right, transparent 49.5%, rgba(255,255,255,0.2) 50%, transparent 50.5%),
+                linear-gradient(to bottom, transparent 49.5%, rgba(255,255,255,0.2) 50%, transparent 50.5%);
+            opacity: 0.3;
+        }
+        .player-dot {
+            position: absolute;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background: var(--bg-card);
+            border: 2px solid var(--accent);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 9px;
+            font-weight: 700;
+            color: var(--text-primary);
+            cursor: pointer;
+            transition: all 0.2s ease;
+            z-index: 2;
+            text-align: center;
+            line-height: 1;
+        }
+        .player-dot.excellent { border-color: #2ecc71; background: rgba(46,204,113,0.3); }
+        .player-dot.good { border-color: #3498db; background: rgba(52,152,219,0.3); }
+        .player-dot.average { border-color: #f39c12; background: rgba(243,156,18,0.3); }
+        .player-dot.weak { border-color: #e74c3c; background: rgba(231,76,60,0.3); }
+        .player-dot:hover { transform: scale(1.2); z-index: 5; }
+
+        /* Badges */
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        .badge-elite { background: rgba(46,204,113,0.2); color: #2ecc71; }
+        .badge-world { background: rgba(52,152,219,0.2); color: #3498db; }
+        .badge-excellent { background: rgba(155,89,182,0.2); color: #9b59b6; }
+        .badge-strong { background: rgba(241,196,15,0.2); color: #f1c40f; }
+        .badge-good { background: rgba(230,126,34,0.2); color: #e67e22; }
+        .badge-average { background: rgba(149,165,166,0.2); color: #95a5a6; }
+        .badge-weak { background: rgba(231,76,60,0.2); color: #e74c3c; }
+
+        /* Tables */
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+        .table th {
+            text-align: left;
+            padding: 10px 12px;
+            background: var(--bg-input);
+            color: var(--text-secondary);
+            font-weight: 600;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .table td {
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border);
+            color: var(--text-primary);
+        }
+        .table tr:hover td { background: var(--bg-panel); }
+
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            padding: 12px 24px;
+            border-radius: 8px;
+            box-shadow: var(--shadow-lg);
+            z-index: 999;
+            transition: transform 0.3s ease;
+            font-size: 14px;
+            white-space: nowrap;
+        }
+        .toast.visible { transform: translateX(-50%) translateY(0); }
+        .toast.success { border-color: var(--success); color: var(--success); }
+        .toast.error { border-color: var(--danger); color: var(--danger); }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .nav-links { display: none; }
+            .container { padding: 10px; }
+            .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+            .pitch { max-width: 100%; }
+        }
+
+        /* Animations */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .fade-in { animation: fadeIn 0.3s ease; }
+        .hidden { display: none !important; }
+
+        /* Player input rows */
+        .player-row {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            margin-bottom: 8px;
+            flex-wrap: wrap;
+        }
+        .player-row input, .player-row select {
+            flex: 1;
+            min-width: 80px;
+        }
+        .player-row .btn-remove {
+            background: none;
+            border: none;
+            color: var(--danger);
+            cursor: pointer;
+            font-size: 18px;
+        }
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+
+    <!-- Navigation -->
+    <nav class="nav-bar">
+        <a href="#" class="nav-logo">
+            <span class="logo-icon">F</span>
+            FC TeamRank
+        </a>
+        <div class="nav-links" id="navLinks">
+            <a href="#" data-page="dashboard" class="active">Dashboard</a>
+            <a href="#" data-page="myteam">My Team</a>
+            <a href="#" data-page="analyze">Analyze</a>
+            <a href="#" data-page="compare">Compare</a>
+            <a href="#" data-page="rankings">Rankings</a>
+            <a href="#" data-page="history">History</a>
+        </div>
+    </nav>
+
+    <div class="container" id="appContainer">
+        <!-- Pages will be rendered here dynamically -->
+    </div>
+
+    <!-- Toast -->
+    <div class="toast" id="toast"></div>
+
+    <script>
+        // =====================================================
+        // FC TeamRank - Full Application Logic
+        // =====================================================
+
+        // ---------- DATA MODELS ----------
+        const POSITIONS = ['GK', 'CB', 'LB', 'RB', 'CDM', 'CM', 'CAM', 'LW', 'RW', 'ST'];
+        const FORMATIONS = ['4-3-3', '4-2-3-1', '4-4-2', '4-2-2-2', '4-1-2-1-2', '3-5-2', '3-4-3', '5-2-3', '5-3-2', '4-3-2-1', '3-4-2-1', '4-5-1', '5-4-1'];
+
+        // Player attributes relevant to each position
+        const POSITION_ATTRIBUTES = {
+            'ST': ['finishing', 'shooting', 'pace', 'physical'],
+            'LW': ['pace', 'dribbling', 'passing', 'finishing'],
+            'RW': ['pace', 'dribbling', 'passing', 'finishing'],
+            'CAM': ['passing', 'dribbling', 'shooting'],
+            'CM': ['passing', 'stamina', 'defending', 'dribbling'],
+            'CDM': ['defending', 'physical', 'passing'],
+            'CB': ['defending', 'physical', 'pace'],
+            'LB': ['pace', 'defending', 'stamina'],
+            'RB': ['pace', 'defending', 'stamina'],
+            'GK': ['diving', 'handling', 'reflexes', 'positioning']
+        };
+
+        // Default attribute values for simulation if not provided
+        const DEFAULT_ATTRS = { pace: 80, shooting: 80, passing: 80, dribbling: 80, defending: 80, physical: 80, stamina: 80, finishing: 80, diving: 80, handling: 80, reflexes: 80, positioning: 80 };
+
+        // Rating weights
+        const WEIGHTS = {
+            teamOVR: 0.25,
+            startingXI: 0.30,
+            positionStrength: 0.15,
+            keyAttributes: 0.10,
+            squadBalance: 0.10,
+            squadDepth: 0.05,
+            synergy: 0.05
+        };
+
+        // ---------- STATE ----------
+        let currentTeam = null;
+        let teams = JSON.parse(localStorage.getItem('fcTeamRank_teams') || '[]');
+        let analyses = JSON.parse(localStorage.getItem('fcTeamRank_analyses') || '[]');
+        let currentPage = 'dashboard';
+
+        // ---------- UTILITY FUNCTIONS ----------
+        function generateId() {
+            return Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+        }
+
+        function saveTeams() {
+            localStorage.setItem('fcTeamRank_teams', JSON.stringify(teams));
+        }
+
+        function saveAnalyses() {
+            localStorage.setItem('fcTeamRank_analyses', JSON.stringify(analyses));
+        }
+
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = `toast ${type} visible`;
+            setTimeout(() => {
+                toast.classList.remove('visible');
+            }, 3000);
+        }
+
+        function formatPercentile(p) {
+            if (p >= 99) return '99+';
+            return Math.floor(p).toString();
+        }
+
+        function getTier(score) {
+            if (score >= 95) return { name: 'Elite', class: 'badge-elite' };
+            if (score >= 90) return { name: 'World Class', class: 'badge-world' };
+            if (score >= 85) return { name: 'Excellent', class: 'badge-excellent' };
+            if (score >= 80) return { name: 'Strong', class: 'badge-strong' };
+            if (score >= 75) return { name: 'Good', class: 'badge-good' };
+            if (score >= 70) return { name: 'Average', class: 'badge-average' };
+            if (score >= 60) return { name: 'Below Average', class: 'badge-weak' };
+            return { name: 'Weak', class: 'badge-weak' };
+        }
+
+        // ---------- RATING ENGINE ----------
+        function calculateTeamRating(team) {
+            // team: { name, formation, overall, players: [{name, position, ovr, baseOvr, rank, training, attributes, playstyle}] }
+            
+            const startingXI = team.players.filter(p => p.isStarter !== false); // Assume all are starters unless marked
+            const bench = team.players.filter(p => p.isStarter === false);
+            if (startingXI.length === 0) {
+                // If no bench distinction, use all as starters and bench empty
+                // This is a fallback
+                if (team.players.length > 0) {
+                    startingXI.length = 0;
+                    team.players.forEach(p => startingXI.push(p));
+                }
+            }
+            
+            // 1. Team OVR Score (weight: 0.25)
+            const teamOVR = parseFloat(team.overall) || 0;
+            const teamOVRScore = Math.min(100, (teamOVR - 70) * (100 / 30)); // assume 70-100 scale to 0-100
+            const clampedTeamOVRScore = Math.max(0, Math.min(100, teamOVRScore));
+            
+            // 2. Starting XI Player Quality (weight: 0.30)
+            const starterOVRs = startingXI.map(p => p.ovr);
+            const avgStarterOVR = starterOVRs.length > 0 ? starterOVRs.reduce((a,b)=>a+b,0)/starterOVRs.length : 0;
+            const starterOVRScore = Math.min(100, (avgStarterOVR - 70) * (100 / 30));
+            const clampedStarterOVRScore = Math.max(0, Math.min(100, starterOVRScore));
+            
+            // 3. Position Strength (weight: 0.15)
+            // For each player, check if position matches natural position; penalize if not.
+            // Also detect weak positions based on OVR relative to team average.
+            let posScoreSum = 0;
+            let posCount = 0;
+            const teamAvgOVR = avgStarterOVR || teamOVR;
+            startingXI.forEach(player => {
+                let posScore = 100;
+                // Check if player's position is in allowed list for formation? We'll assume all positions are valid
+                // Penalize if player OVR is significantly below team average in their position
+                const diff = teamAvgOVR - player.ovr;
+                if (diff > 5) {
+                    posScore -= (diff - 5) * 2; // penalty
+                }
+                // Out-of-position penalty (based on player's declared position vs actual position played? We'll simulate by checking if player's position matches a preset natural position for their role)
+                // For simplicity, we'll assume all positions entered are correct. We can add later.
+                posScoreSum += posScore;
+                posCount++;
+            });
+            const avgPositionScore = posCount > 0 ? posScoreSum / posCount : 0;
+            const clampedPositionScore = Math.max(0, Math.min(100, avgPositionScore));
+            
+            // 4. Key Attributes (weight: 0.10)
+            // Calculate average of relevant attributes for each player based on position.
+            let attrScoreSum = 0;
+            let attrCount = 0;
+            startingXI.forEach(player => {
+                const pos = player.position;
+                const attrs = POSITION_ATTRIBUTES[pos] || ['pace','shooting','passing','dribbling','defending','physical'];
+                let attrAvg = 0;
+                attrs.forEach(attr => {
+                    const val = player.attributes && player.attributes[attr] ? player.attributes[attr] : DEFAULT_ATTRS[attr] || 80;
+                    attrAvg += val;
+                });
+                attrAvg /= attrs.length;
+                const attrScore = Math.min(100, Math.max(0, attrAvg));
+                attrScoreSum += attrScore;
+                attrCount++;
+            });
+            const avgAttrScore = attrCount > 0 ? attrScoreSum / attrCount : 0;
+            
+            // 5. Squad Balance (weight: 0.10)
+            // Analyze weaknesses: weak positions, weak GK, etc.
+            let balanceScore = 100;
+            const gk = startingXI.find(p => p.position === 'GK');
+            if (!gk || gk.ovr < teamAvgOVR - 5) balanceScore -= 10;
+            const cbs = startingXI.filter(p => p.position === 'CB');
+            if (cbs.length < 2) balanceScore -= 5;
+            else {
+                const cbAvg = cbs.reduce((a,b)=>a+b.ovr,0)/cbs.length;
+                if (cbAvg < teamAvgOVR - 3) balanceScore -= 10;
+            }
+            const fullbacks = startingXI.filter(p => p.position === 'LB' || p.position === 'RB');
+            if (fullbacks.length < 2) balanceScore -= 5;
+            else {
+                const fbAvg = fullbacks.reduce((a,b)=>a+b.ovr,0)/fullbacks.length;
+                if (fbAvg < teamAvgOVR - 3) balanceScore -= 8;
+            }
+            const midfielders = startingXI.filter(p => ['CM','CDM','CAM'].includes(p.position));
+            if (midfielders.length < 2) balanceScore -= 5;
+            const attackers = startingXI.filter(p => ['ST','LW','RW','CF'].includes(p.position));
+            if (attackers.length < 1) balanceScore -= 10;
+            balanceScore = Math.max(0, Math.min(100, balanceScore));
+            
+            // 6. Squad Depth (weight: 0.05)
+            let depthScore = 0;
+            if (bench.length > 0) {
+                const benchOVRs = bench.map(p => p.ovr);
+                const benchAvg = benchOVRs.reduce((a,b)=>a+b,0)/benchOVRs.length;
+                depthScore = Math.min(100, (benchAvg - 60) * (100 / 40)); // scale 60-100 to 0-100
+            } else {
+                depthScore = 30; // no bench
+            }
+            depthScore = Math.max(0, Math.min(100, depthScore));
+            
+            // 7. Team Synergy/Consistency (weight: 0.05)
+            // Reward consistent OVRs, penalize huge variance
+            const allOVRs = [...startingXI.map(p=>p.ovr), ...bench.map(p=>p.ovr)];
+            const avgAll = allOVRs.length > 0 ? allOVRs.reduce((a,b)=>a+b,0)/allOVRs.length : 0;
+            const variance = allOVRs.reduce((acc, ovr) => acc + (ovr - avgAll) ** 2, 0) / (allOVRs.length || 1);
+            const stdDev = Math.sqrt(variance);
+            let synergyScore = 100 - stdDev * 2; // lower variance = higher score
+            synergyScore = Math.max(0, Math.min(100, synergyScore));
+            
+            // Weighted total
+            const totalScore = 
+                clampedTeamOVRScore * WEIGHTS.teamOVR +
+                clampedStarterOVRScore * WEIGHTS.startingXI +
+                clampedPositionScore * WEIGHTS.positionStrength +
+                avgAttrScore * WEIGHTS.keyAttributes +
+                balanceScore * WEIGHTS.squadBalance +
+                depthScore * WEIGHTS.squadDepth +
+                synergyScore * WEIGHTS.synergy;
+            
+            const finalScore = Math.round(totalScore * 10) / 10;
+            
+            // Calculate category scores for display
+            const attackPlayers = startingXI.filter(p => ['ST','LW','RW','CF'].includes(p.position));
+            const midfieldPlayers = startingXI.filter(p => ['CM','CDM','CAM'].includes(p.position));
+            const defensePlayers = startingXI.filter(p => ['CB','LB','RB','WB'].includes(p.position));
+            const gkPlayer = startingXI.find(p => p.position === 'GK');
+            
+            function categoryScore(players) {
+                if (!players || players.length === 0) return 0;
+                const avgOvr = players.reduce((a,b)=>a+b.ovr,0)/players.length;
+                // Blend with attributes
+                let attrTotal = 0, attrCount = 0;
+                players.forEach(p => {
+                    const posAttrs = POSITION_ATTRIBUTES[p.position] || ['pace','shooting','passing','dribbling','defending','physical'];
+                    posAttrs.forEach(attr => {
+                        attrTotal += (p.attributes && p.attributes[attr]) ? p.attributes[attr] : DEFAULT_ATTRS[attr] || 80;
+                        attrCount++;
+                    });
+                });
+                const attrAvg = attrCount > 0 ? attrTotal / attrCount : 80;
+                const weighted = avgOvr * 0.7 + attrAvg * 0.3;
+                return Math.min(100, Math.max(0, (weighted - 60) * (100 / 40)));
+            }
+            
+            const attackScore = Math.round(categoryScore(attackPlayers) * 10) / 10;
+            const midfieldScore = Math.round(categoryScore(midfieldPlayers) * 10) / 10;
+            const defenseScore = Math.round(categoryScore(defensePlayers) * 10) / 10;
+            const gkScore = gkPlayer ? Math.round(categoryScore([gkPlayer]) * 10) / 10 : 0;
+            
+            // Weakness detection
+            const weaknesses = [];
+            // Find lowest rated starter
+            const sortedStarters = [...startingXI].sort((a,b) => a.ovr - b.ovr);
+            if (sortedStarters.length > 0) {
+                const weakest = sortedStarters[0];
+                weaknesses.push(`${weakest.position} (${weakest.name}) is ${Math.round(teamAvgOVR - weakest.ovr)} points below squad average`);
+            }
+            // Check GK
+            if (gkPlayer && gkPlayer.ovr < teamAvgOVR - 3) weaknesses.push('Weak goalkeeper');
+            // Check CBs
+            if (cbs.length > 0) {
+                const cbAvg = cbs.reduce((a,b)=>a+b.ovr,0)/cbs.length;
+                if (cbAvg < teamAvgOVR - 3) weaknesses.push('Center-backs are below squad level');
+            }
+            // Check pace for fullbacks
+            fullbacks.forEach(fb => {
+                const pace = fb.attributes?.pace || DEFAULT_ATTRS.pace;
+                if (pace < 75) weaknesses.push(`${fb.position} ${fb.name} lacks pace`);
+            });
+            
+            // Upgrade recommendation
+            let upgradeRecommendation = '';
+            if (weaknesses.length > 0) {
+                const firstWeakness = weaknesses[0];
+                upgradeRecommendation = `Priority: Address ${firstWeakness}. Look for higher OVR with better key attributes.`;
+            } else {
+                upgradeRecommendation = 'Squad is well-balanced. Consider upgrading bench depth.';
+            }
+            
+            return {
+                score: finalScore,
+                teamOVRScore: clampedTeamOVRScore,
+                starterOVRScore: clampedStarterOVRScore,
+                positionScore: clampedPositionScore,
+                attrScore: avgAttrScore,
+                balanceScore,
+                depthScore,
+                synergyScore,
+                attackScore,
+                midfieldScore,
+                defenseScore,
+                gkScore,
+                weaknesses: weaknesses.slice(0, 3),
+                upgradeRecommendation,
+                tier: getTier(finalScore)
+            };
+        }
+
+        // ---------- PERCENTILE (simulated) ----------
+        function calculatePercentile(score, allAnalyses) {
+            if (allAnalyses.length === 0) return 99;
+            const scores = allAnalyses.map(a => a.score);
+            scores.sort((a,b) => a - b);
+            let lowerCount = scores.filter(s => s < score).length;
+            return Math.round((lowerCount / scores.length) * 100);
+        }
+
+        // ---------- RENDERING ----------
+        function navigate(page) {
+            currentPage = page;
+            document.querySelectorAll('.nav-links a').forEach(a => {
+                a.classList.toggle('active', a.dataset.page === page);
+            });
+            renderPage();
+        }
+
+        function renderPage() {
+            const container = document.getElementById('appContainer');
+            container.innerHTML = '';
+            container.classList.add('fade-in');
+            
+            switch(currentPage) {
+                case 'dashboard': renderDashboard(container); break;
+                case 'myteam': renderMyTeam(container); break;
+                case 'analyze': renderAnalyze(container); break;
+                case 'compare': renderCompare(container); break;
+                case 'rankings': renderRankings(container); break;
+                case 'history': renderHistory(container); break;
+                default: renderDashboard(container);
+            }
+        }
+
+        function renderDashboard(container) {
+            if (!currentTeam) {
+                container.innerHTML = `
+                    <div class="card" style="text-align:center; padding:60px 20px;">
+                        <h2 style="margin-bottom:20px;">No Team Analyzed Yet</h2>
+                        <p style="color:var(--text-secondary); margin-bottom:30px;">Create or analyze your FC Mobile squad to get your TeamRank.</p>
+                        <button class="btn btn-primary" onclick="navigate('myteam')">+ Create Team</button>
+                    </div>
+                `;
+                return;
+            }
+            
+            const analysis = calculateTeamRating(currentTeam);
+            const allAnalyses = analyses;
+            const percentile = calculatePercentile(analysis.score, allAnalyses);
+            
+            container.innerHTML = `
+                <div class="grid-3">
+                    <div class="card" style="text-align:center;">
+                        <h3 style="margin-bottom:20px;">TeamRank Score</h3>
+                        <div class="score-circle" style="--score-angle: ${analysis.score * 3.6}deg;">
+                            <div class="score-inner">
+                                <span class="score-number">${analysis.score}</span>
+                                <span class="score-label">/100</span>
+                            </div>
+                        </div>
+                        <div style="margin-top:15px;">
+                            <span class="badge ${analysis.tier.class}">${analysis.tier.name}</span>
+                        </div>
+                        <p style="margin-top:15px; color:var(--text-secondary);">Better than ${formatPercentile(percentile)}% of analyzed teams</p>
+                    </div>
+                    <div class="card">
+                        <h3 class="card-title"><span class="icon">📊</span> Quick Stats</h3>
+                        <div style="display:flex; flex-direction:column; gap:12px;">
+                            <div><span style="color:var(--text-secondary);">Team OVR:</span> <strong>${currentTeam.overall}</strong></div>
+                            <div><span style="color:var(--text-secondary);">Formation:</span> <strong>${currentTeam.formation}</strong></div>
+                            <div><span style="color:var(--text-secondary);">Players:</span> <strong>${currentTeam.players.length}</strong></div>
+                            <div><span style="color:var(--text-secondary);">Attack:</span> <strong>${analysis.attackScore}/100</strong></div>
+                            <div><span style="color:var(--text-secondary);">Midfield:</span> <strong>${analysis.midfieldScore}/100</strong></div>
+                            <div><span style="color:var(--text-secondary);">Defense:</span> <strong>${analysis.defenseScore}/100</strong></div>
+                            <div><span style="color:var(--text-secondary);">GK:</span> <strong>${analysis.gkScore}/100</strong></div>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <h3 class="card-title"><span class="icon">⚠️</span> Biggest Weakness</h3>
+                        <div style="color:var(--danger); font-size:16px; margin-bottom:15px;">
+                            ${analysis.weaknesses.length > 0 ? analysis.weaknesses[0] : 'No major weaknesses detected'}
+                        </div>
+                        <h3 class="card-title"><span class="icon">📈</span> Recommended Upgrade</h3>
+                        <p style="color:var(--text-secondary);">${analysis.upgradeRecommendation}</p>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3 class="card-title">Position Breakdown</h3>
+                    <div id="pitchContainer"></div>
+                </div>
+                <div class="card">
+                    <h3 class="card-title">Detailed Scores</h3>
+                    <div class="grid-3">
+                        <div>Attack: ${analysis.attackScore}/100</div>
+                        <div>Midfield: ${analysis.midfieldScore}/100</div>
+                        <div>Defense: ${analysis.defenseScore}/100</div>
+                        <div>Goalkeeper: ${analysis.gkScore}/100</div>
+                        <div>Balance: ${analysis.balanceScore}/100</div>
+                        <div>Depth: ${analysis.depthScore}/100</div>
+                    </div>
+                </div>
+            `;
+            renderPitch(currentTeam, analysis);
+        }
+
+        function renderPitch(team, analysis) {
+            const container = document.getElementById('pitchContainer');
+            if (!container) return;
+            container.innerHTML = '';
+            
+            const pitch = document.createElement('div');
+            pitch.className = 'pitch';
+            container.appendChild(pitch);
+            
+            // Map positions to coordinates (percentages)
+            const posMap = {
+                'GK': {x:50, y:90},
+                'CB': [{x:20,y:70},{x:80,y:70}],
+                'LB': {x:10, y:55},
+                'RB': {x:90, y:55},
+                'CDM': {x:50, y:50},
+                'CM': [{x:30,y:50},{x:70,y:50}],
+                'CAM': {x:50, y:35},
+                'LW': {x:15, y:20},
+                'RW': {x:85, y:20},
+                'ST': {x:50, y:15}
+            };
+            
+            const starters = team.players.filter(p => p.isStarter !== false);
+            const bench = team.players.filter(p => p.isStarter === false);
+            
+            // Position each starter
+            const placed = {};
+            starters.forEach(player => {
+                const pos = player.position;
+                let coords;
+                if (Array.isArray(posMap[pos])) {
+                    // For positions with multiple slots (CB, CM)
+                    const key = pos + (placed[pos] || 0);
+                    coords = posMap[pos][placed[pos] || 0];
+                    placed[pos] = (placed[pos] || 0) + 1;
+                } else {
+                    coords = posMap[pos];
+                }
+                if (coords) {
+                    const dot = document.createElement('div');
+                    dot.className = 'player-dot';
+                    // Determine quality class
+                    let qualityClass = 'average';
+                    if (player.ovr >= team.overall) qualityClass = 'excellent';
+                    else if (player.ovr >= team.overall - 3) qualityClass = 'good';
+                    else if (player.ovr >= team.overall - 7) qualityClass = 'average';
+                    else qualityClass = 'weak';
+                    dot.className += ` ${qualityClass}`;
+                    dot.style.left = `${coords.x}%`;
+                    dot.style.top = `${coords.y}%`;
+                    dot.style.transform = 'translate(-50%, -50%)';
+                    dot.textContent = player.ovr;
+                    dot.title = `${player.name} - ${player.position} (OVR ${player.ovr})`;
+                    pitch.appendChild(dot);
+                }
+            });
+            
+            // Add lines and other pitch markings (simplified)
+            const lines = document.createElement('div');
+            lines.className = 'pitch-lines';
+            pitch.appendChild(lines);
+        }
+
+        function renderMyTeam(container) {
+            container.innerHTML = `
+                <div class="grid-2">
+                    <div class="card">
+                        <h3 class="card-title"><span class="icon">👥</span> Team Details</h3>
+                        <div class="form-group">
+                            <label>Team Name</label>
+                            <input type="text" id="teamName" value="${currentTeam?.name || ''}" placeholder="e.g. Thunder FC">
+                        </div>
+                        <div class="form-group">
+                            <label>Formation</label>
+                            <select id="teamFormation">
+                                ${FORMATIONS.map(f => `<option value="${f}" ${currentTeam?.formation === f ? 'selected' : ''}>${f}</option>`).join('')}
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Overall Team OVR</label>
+                            <input type="number" id="teamOverall" value="${currentTeam?.overall || ''}" min="60" max="200" step="0.1">
+                        </div>
+                    </div>
+                    <div class="card">
+                        <h3 class="card-title"><span class="icon">📋</span> Players</h3>
+                        <div id="playersList"></div>
+                        <button class="btn btn-sm" onclick="addPlayerRow()">+ Add Player</button>
+                    </div>
+                </div>
+                <div style="margin-top:20px; display:flex; gap:10px;">
+                    <button class="btn btn-primary" onclick="saveTeamAndAnalyze()">Save & Analyze</button>
+                    <button class="btn" onclick="navigate('analyze')">Go to Analysis</button>
+                </div>
+            `;
+            
+            // Render existing players
+            const playersList = document.getElementById('playersList');
+            if (currentTeam && currentTeam.players.length > 0) {
+                currentTeam.players.forEach((player, index) => {
+                    addPlayerRow(player, index);
+                });
+            } else {
+                // Add default empty rows
+                addPlayerRow();
+            }
+        }
+
+        function addPlayerRow(playerData = null, index = null) {
+            const playersList = document.getElementById('playersList');
+            if (!playersList) return;
+            
+            const row = document.createElement('div');
+            row.className = 'player-row';
+            row.dataset.index = index !== null ? index : playersList.children.length;
+            
+            row.innerHTML = `
+                <input type="text" placeholder="Name" value="${playerData?.name || ''}" class="p-name" style="flex:2;">
+                <select class="p-position">
+                    ${POSITIONS.map(p => `<option value="${p}" ${playerData?.position === p ? 'selected' : ''}>${p}</option>`).join('')}
+                </select>
+                <input type="number" placeholder="OVR" value="${playerData?.ovr || ''}" class="p-ovr" min="50" max="200" step="1" style="flex:1;">
+                <input type="number" placeholder="Base" value="${playerData?.baseOvr || ''}" class="p-base" min="50" max="150" step="1" style="flex:1;">
+                <input type="number" placeholder="Rank" value="${playerData?.rank || ''}" class="p-rank" min="1" max="10" style="flex:1;">
+                <input type="number" placeholder="Training" value="${playerData?.training || ''}" class="p-training" min="0" max="30" style="flex:1;">
+                <button class="btn-remove" onclick="this.parentElement.remove()">×</button>
+            `;
+            playersList.appendChild(row);
+        }
+
+        function saveTeamAndAnalyze() {
+            const name = document.getElementById('teamName').value.trim();
+            const formation = document.getElementById('teamFormation').value;
+            const overall = parseFloat(document.getElementById('teamOverall').value);
+            
+            if (!name || !overall) {
+                showToast('Please fill team name and overall', 'error');
+                return;
+            }
+            
+            // Collect players
+            const playerRows = document.querySelectorAll('.player-row');
+            const players = [];
+            playerRows.forEach(row => {
+                const name = row.querySelector('.p-name').value.trim();
+                const position = row.querySelector('.p-position').value;
+                const ovr = parseFloat(row.querySelector('.p-ovr').value) || 0;
+                const baseOvr = parseFloat(row.querySelector('.p-base').value) || ovr;
+                const rank = parseInt(row.querySelector('.p-rank').value) || 0;
+                const training = parseInt(row.querySelector('.p-training').value) || 0;
+                if (name && ovr > 0) {
+                    players.push({ name, position, ovr, baseOvr, rank, training, attributes: DEFAULT_ATTRS });
+                }
+            });
+            
+            if (players.length < 11) {
+                showToast('Need at least 11 players for starting XI', 'error');
+                return;
+            }
+            
+            // Check consistency
+            const avgPlayerOVR = players.reduce((a,b)=>a+b.ovr,0)/players.length;
+            if (Math.abs(avgPlayerOVR - overall) > 5) {
+                showToast('Warning: Team OVR seems inconsistent with player ratings. Please verify.', 'error');
+                // Allow continuation
+            }
+            
+            const team = {
+                id: currentTeam?.id || generateId(),
+                name,
+                formation,
+                overall,
+                players: players,
+                createdAt: currentTeam?.createdAt || new Date().toISOString(),
+                updatedAt: new Date().toISOString()
+            };
+            
+            // Save to teams
+            const existingIndex = teams.findIndex(t => t.id === team.id);
+            if (existingIndex >= 0) {
+                teams[existingIndex] = team;
+            } else {
+                teams.push(team);
+            }
+            saveTeams();
+            
+            currentTeam = team;
+            showToast('Team saved successfully');
+            navigate('analyze');
+        }
+
+        function renderAnalyze(container) {
+            if (!currentTeam) {
+                container.innerHTML = `<div class="card"><p>Please create a team first.</p><button class="btn btn-primary" onclick="navigate('myteam')">Create Team</button></div>`;
+                return;
+            }
+            
+            const analysis = calculateTeamRating(currentTeam);
+            // Save analysis to history
+            const analysisRecord = {
+                id: generateId(),
+                teamId: currentTeam.id,
+                teamName: currentTeam.name,
+                teamOVR: currentTeam.overall,
+                formation: currentTeam.formation,
+                score: analysis.score,
+                attackScore: analysis.attackScore,
+                midfieldScore: analysis.midfieldScore,
+                defenseScore: analysis.defenseScore,
+                gkScore: analysis.gkScore,
+                balanceScore: analysis.balanceScore,
+                depthScore: analysis.depthScore,
+                createdAt: new Date().toISOString()
+            };
+            analyses.push(analysisRecord);
+            saveAnalyses();
+            
+            const percentile = calculatePercentile(analysis.score, analyses);
+            
+            container.innerHTML = `
+                <div class="card">
+                    <h3 class="card-title">Analysis Result - ${currentTeam.name}</h3>
+                    <div class="grid-2">
+                        <div style="text-align:center;">
+                            <div class="score-circle" style="--score-angle: ${analysis.score * 3.6}deg;">
+                                <div class="score-inner">
+                                    <span class="score-number">${analysis.score}</span>
+                                    <span class="score-label">TeamRank</span>
+                                </div>
+                            </div>
+                            <div style="margin-top:10px;"><span class="badge ${analysis.tier.class}">${analysis.tier.name}</span></div>
+                            <p style="margin-top:10px; color:var(--text-secondary);">Better than ${formatPercentile(percentile)}% of teams</p>
+                        </div>
+                        <div>
+                            <h4>Category Scores</h4>
+                            <div style="display:flex; flex-direction:column; gap:8px; margin-top:10px;">
+                                <div>Attack: ${analysis.attackScore}/100</div>
+                                <div>Midfield: ${analysis.midfieldScore}/100</div>
+                                <div>Defense: ${analysis.defenseScore}/100</div>
+                                <div>Goalkeeper: ${analysis.gkScore}/100</div>
+                                <div>Balance: ${analysis.balanceScore}/100</div>
+                                <div>Depth: ${analysis.depthScore}/100</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3 class="card-title">Position-by-Position Analysis</h3>
+                    <div id="analyzePitch"></div>
+                </div>
+                <div class="card">
+                    <h3 class="card-title">Weaknesses</h3>
+                    <ul style="list-style: none; padding-left:0;">
+                        ${analysis.weaknesses.map(w => `<li style="padding:8px 0; border-bottom:1px solid var(--border);">⚠️ ${w}</li>`).join('')}
+                    </ul>
+                </div>
+                <div class="card">
+                    <h3 class="card-title">Upgrade Recommendation</h3>
+                    <p>${analysis.upgradeRecommendation}</p>
+                </div>
+                <div class="card">
+                    <h3 class="card-title">Rating Breakdown</h3>
+                    <div class="grid-3">
+                        <div>Team OVR: ${analysis.teamOVRScore.toFixed(1)} / 100</div>
+                        <div>Starting XI: ${analysis.starterOVRScore.toFixed(1)} / 100</div>
+                        <div>Position Strength: ${analysis.positionScore.toFixed(1)} / 100</div>
+                        <div>Key Attributes: ${analysis.attrScore.toFixed(1)} / 100</div>
+                        <div>Balance: ${analysis.balanceScore.toFixed(1)} / 100</div>
+                        <div>Depth: ${analysis.depthScore.toFixed(1)} / 100</div>
+                        <div>Synergy: ${analysis.synergyScore.toFixed(1)} / 100</div>
+                    </div>
+                </div>
+            `;
+            
+            // Render pitch in analyze view
+            const pitchContainer = document.getElementById('analyzePitch');
+            if (pitchContainer) {
+                // Reuse pitch rendering by creating a temporary container
+                const tempDiv = document.createElement('div');
+                tempDiv.id = 'tempPitchContainer';
+                pitchContainer.appendChild(tempDiv);
+                // We'll manually render pitch into tempDiv
+                renderPitchIntoContainer(currentTeam, analysis, tempDiv);
+            }
+        }
+
+        function renderPitchIntoContainer(team, analysis, container) {
+            container.innerHTML = '';
+            const pitch = document.createElement('div');
+            pitch.className = 'pitch';
+            container.appendChild(pitch);
+            
+            const posMap = {
+                'GK': {x:50, y:90},
+                'CB': [{x:20,y:70},{x:80,y:70}],
+                'LB': {x:10, y:55},
+                'RB': {x:90, y:55},
+                'CDM': {x:50, y:50},
+                'CM': [{x:30,y:50},{x:70,y:50}],
+                'CAM': {x:50, y:35},
+                'LW': {x:15, y:20},
+                'RW': {x:85, y:20},
+                'ST': {x:50, y:15}
+            };
+            
+            const starters = team.players.filter(p => p.isStarter !== false);
+            const placed = {};
+            starters.forEach(player => {
+                const pos = player.position;
+                let coords;
+                if (Array.isArray(posMap[pos])) {
+                    const key = pos + (placed[pos] || 0);
+                    coords = posMap[pos][placed[pos] || 0];
+                    placed[pos] = (placed[pos] || 0) + 1;
+                } else {
+                    coords = posMap[pos];
+                }
+                if (coords) {
+                    const dot = document.createElement('div');
+                    dot.className = 'player-dot';
+                    let qualityClass = 'average';
+                    if (player.ovr >= team.overall) qualityClass = 'excellent';
+                    else if (player.ovr >= team.overall - 3) qualityClass = 'good';
+                    else if (player.ovr >= team.overall - 7) qualityClass = 'average';
+                    else qualityClass = 'weak';
+                    dot.className += ` ${qualityClass}`;
+                    dot.style.left = `${coords.x}%`;
+                    dot.style.top = `${coords.y}%`;
+                    dot.style.transform = 'translate(-50%, -50%)';
+                    dot.textContent = player.ovr;
+                    dot.title = `${player.name} - ${player.position} (OVR ${player.ovr})`;
+                    pitch.appendChild(dot);
+                }
+            });
+        }
+
+        function renderCompare(container) {
+            const savedTeams = teams;
+            if (savedTeams.length < 2) {
+                container.innerHTML = `<div class="card"><p>Need at least 2 teams to compare. Create more teams.</p></div>`;
+                return;
+            }
+            
+            container.innerHTML = `
+                <div class="card">
+                    <h3 class="card-title">Compare Teams</h3>
+                    <div class="grid-2">
+                        <div>
+                            <label>Team A</label>
+                            <select id="compareTeamA" class="form-control">
+                                ${savedTeams.map(t => `<option value="${t.id}">${t.name} (OVR ${t.overall})</option>`).join('')}
+                            </select>
+                        </div>
+                        <div>
+                            <label>Team B</label>
+                            <select id="compareTeamB" class="form-control">
+                                ${savedTeams.map(t => `<option value="${t.id}">${t.name} (OVR ${t.overall})</option>`).join('')}
+                            </select>
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" onclick="performComparison()">Compare</button>
+                </div>
+                <div id="comparisonResult"></div>
+            `;
+            
+            // Default select different teams
+            if (savedTeams.length >= 2) {
+                document.getElementById('compareTeamA').value = savedTeams[0].id;
+                document.getElementById('compareTeamB').value = savedTeams[1].id;
+            }
+        }
+
+        function performComparison() {
+            const teamAId = document.getElementById('compareTeamA').value;
+            const teamBId = document.getElementById('compareTeamB').value;
+            const teamA = teams.find(t => t.id === teamAId);
+            const teamB = teams.find(t => t.id === teamBId);
+            if (!teamA || !teamB) return;
+            
+            const analysisA = calculateTeamRating(teamA);
+            const analysisB = calculateTeamRating(teamB);
+            
+            const resultContainer = document.getElementById('comparisonResult');
+            resultContainer.innerHTML = `
+                <div class="card">
+                    <h3 class="card-title">${teamA.name} vs ${teamB.name}</h3>
+                    <table class="table">
+                        <thead><tr><th>Metric</th><th>Team A</th><th>Team B</th></tr></thead>
+                        <tbody>
+                            <tr><td>Team OVR</td><td>${teamA.overall}</td><td>${teamB.overall}</td></tr>
+                            <tr><td>TeamRank Score</td><td>${analysisA.score}</td><td>${analysisB.score}</td></tr>
+                            <tr><td>Attack</td><td>${analysisA.attackScore}</td><td>${analysisB.attackScore}</td></tr>
+                            <tr><td>Midfield</td><td>${analysisA.midfieldScore}</td><td>${analysisB.midfieldScore}</td></tr>
+                            <tr><td>Defense</td><td>${analysisA.defenseScore}</td><td>${analysisB.defenseScore}</td></tr>
+                            <tr><td>GK</td><td>${analysisA.gkScore}</td><td>${analysisB.gkScore}</td></tr>
+                            <tr><td>Balance</td><td>${analysisA.balanceScore}</td><td>${analysisB.balanceScore}</td></tr>
+                            <tr><td>Depth</td><td>${analysisA.depthScore}</td><td>${analysisB.depthScore}</td></tr>
+                        </tbody>
+                    </table>
+                    <div style="margin-top:20px; padding:15px; background:var(--bg-input); border-radius:8px;">
+                        <strong>Conclusion:</strong> 
+                        ${analysisA.score > analysisB.score ? 
+                            `${teamA.name} has the stronger overall squad, led by superior ${analysisA.attackScore > analysisB.attackScore ? 'attack' : 'defense'}.` :
+                            `${teamB.name} has the stronger overall squad, led by superior ${analysisB.attackScore > analysisA.attackScore ? 'attack' : 'defense'}.`}
+                        However, each team has strengths in different areas.
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderRankings(container) {
+            const sortedTeams = [...teams].map(team => {
+                const analysis = calculateTeamRating(team);
+                return { team, analysis };
+            }).sort((a,b) => b.analysis.score - a.analysis.score);
+            
+            container.innerHTML = `
+                <div class="card">
+                    <h3 class="card-title">🏆 Global TeamRank Leaderboard</h3>
+                    ${sortedTeams.length === 0 ? '<p>No teams analyzed yet.</p>' : `
+                    <table class="table">
+                        <thead><tr><th>Rank</th><th>Team</th><th>OVR</th><th>TeamRank</th><th>Attack</th><th>Midfield</th><th>Defense</th></tr></thead>
+                        <tbody>
+                            ${sortedTeams.map((item, index) => `
+                                <tr>
+                                    <td>#${index+1}</td>
+                                    <td>${item.team.name}</td>
+                                    <td>${item.team.overall}</td>
+                                    <td><strong>${item.analysis.score}</strong></td>
+                                    <td>${item.analysis.attackScore}</td>
+                                    <td>${item.analysis.midfieldScore}</td>
+                                    <td>${item.analysis.defenseScore}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>`}
+                </div>
+            `;
+        }
+
+        function renderHistory(container) {
+            const history = analyses.slice().reverse();
+            container.innerHTML = `
+                <div class="card">
+                    <h3 class="card-title">📊 Analysis History</h3>
+                    ${history.length === 0 ? '<p>No analyses yet.</p>' : `
+                    <table class="table">
+                        <thead><tr><th>Date</th><th>Team</th><th>OVR</th><th>Score</th><th>Attack</th><th>Midfield</th><th>Defense</th></tr></thead>
+                        <tbody>
+                            ${history.map(item => `
+                                <tr>
+                                    <td>${new Date(item.createdAt).toLocaleDateString()}</td>
+                                    <td>${item.teamName}</td>
+                                    <td>${item.teamOVR}</td>
+                                    <td><strong>${item.score}</strong></td>
+                                    <td>${item.attackScore}</td>
+                                    <td>${item.midfieldScore}</td>
+                                    <td>${item.defenseScore}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>`}
+                </div>
+            `;
+        }
+
+        // ---------- EVENT LISTENERS ----------
+        document.addEventListener('DOMContentLoaded', () => {
+            // Navigation
+            document.querySelectorAll('.nav-links a').forEach(link => {
+                link.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    navigate(link.dataset.page);
+                });
+            });
+            
+            // Global click for add player row in myteam (if needed)
+            document.addEventListener('click', (e) => {
+                if (e.target.matches('#playersList .btn-remove')) {
+                    e.target.parentElement.remove();
+                }
+            });
+            
+            // Initial load
+            navigate('dashboard');
+        });
+
+        // Make functions available globally for inline onclick
+        window.navigate = navigate;
+        window.addPlayerRow = addPlayerRow;
+        window.saveTeamAndAnalyze = saveTeamAndAnalyze;
+        window.performComparison = performComparison;
+        window.calculateTeamRating = calculateTeamRating;
+    </script>
+</body>
+</html>
