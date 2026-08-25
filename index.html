@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
+    <title>LUMINA – Lookmaxing Suite</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,600;14..32,700;14..32,900&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #07070d;
+            color: #eef0f4;
+            font-family: 'Inter', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            padding: 20px;
+            background-image: radial-gradient(circle at 10% 20%, rgba(0, 212, 255, 0.06) 0%, transparent 50%),
+                              radial-gradient(circle at 90% 80%, rgba(168, 85, 247, 0.06) 0%, transparent 50%);
+        }
+        .app-container {
+            max-width: 1400px;
+            width: 100%;
+        }
+        /* Glassmorphism */
+        .glass {
+            background: rgba(255,255,255,0.03);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 32px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+        }
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #2a2a3a; border-radius: 10px; }
+
+        /* Header */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 18px 28px;
+            margin-bottom: 28px;
+            background: rgba(10,10,18,0.6);
+            border-radius: 60px;
+            border: 1px solid rgba(255,255,255,0.04);
+        }
+        .logo { font-size: 1.8rem; font-weight: 900; background: linear-gradient(135deg, #00d4ff, #a855f7); -webkit-background-clip: text; -webkit-text-fill-color: transparent; letter-spacing: -0.5px; }
+        .logo span { font-weight: 300; -webkit-text-fill-color: rgba(255,255,255,0.2); font-size: 0.8rem; margin-left: 6px; }
+        .nav-icons { display: flex; gap: 20px; font-size: 1.2rem; color: #6a6a8a; }
+        .nav-icons i { cursor: pointer; transition: 0.2s; }
+        .nav-icons i:hover { color: #00d4ff; }
+        .avatar { width: 42px; height: 42px; border-radius: 60px; background: linear-gradient(135deg, #00d4ff, #a855f7); display: flex; align-items: center; justify-content: center; font-weight: 700; cursor: pointer; border: 2px solid rgba(255,255,255,0.1); }
+
+        /* Main grid */
+        .grid-dashboard {
+            display: grid;
+            grid-template-columns: 1fr 0.8fr 1.2fr;
+            gap: 24px;
+            margin-bottom: 24px;
+        }
+        @media (max-width: 1100px) { .grid-dashboard { grid-template-columns: 1fr 1fr; } }
+        @media (max-width: 700px) { .grid-dashboard { grid-template-columns: 1fr; } }
+
+        .card {
+            padding: 24px 26px;
+            background: rgba(255,255,255,0.02);
+            border-radius: 28px;
+            border: 1px solid rgba(255,255,255,0.04);
+            transition: 0.3s;
+        }
+        .card:hover { border-color: rgba(0,212,255,0.12); }
+
+        .card-title {
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            letter-spacing: 2.5px;
+            color: #6a6a8a;
+            margin-bottom: 18px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .card-title i { color: #00d4ff; font-size: 1rem; }
+
+        /* Score ring */
+        .score-ring {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        .ring-wrapper {
+            position: relative;
+            width: 160px;
+            height: 160px;
+        }
+        .ring-wrapper svg { transform: rotate(-90deg); width: 160px; height: 160px; }
+        .ring-bg { fill: none; stroke: rgba(255,255,255,0.04); stroke-width: 10; }
+        .ring-fill { fill: none; stroke: url(#grad); stroke-width: 10; stroke-dasharray: 440; stroke-dashoffset: 70; stroke-linecap: round; transition: 0.8s; }
+        .score-text { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        .score-number { font-size: 2.8rem; font-weight: 900; background: linear-gradient(135deg, #00d4ff, #a855f7); -webkit-background-clip: text; -webkit-text-fill-color: transparent; line-height: 1; }
+        .score-label { font-size: 0.7rem; color: #6a6a8a; margin-top: 4px; }
+        .tier-badge { margin-top: 10px; background: rgba(0,212,255,0.12); color: #00d4ff; padding: 4px 18px; border-radius: 40px; font-size: 0.8rem; font-weight: 600; }
+
+        /* Stat rows */
+        .stat-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 6px;
+        }
+        .stat-item {
+            background: rgba(255,255,255,0.02);
+            border-radius: 16px;
+            padding: 12px 10px;
+            text-align: center;
+            border: 1px solid rgba(255,255,255,0.02);
+        }
+        .stat-item .value { font-size: 1.4rem; font-weight: 700; color: #fff; }
+        .stat-item .label { font-size: 0.55rem; color: #6a6a8a; text-transform: uppercase; letter-spacing: 0.5px; }
+        .stat-item .trend { font-size: 0.7rem; color: #4ade80; margin-left: 4px; }
+
+        /* Weakness list */
+        .weakness-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.03);
+        }
+        .weakness-item .icon { width: 28px; height: 28px; border-radius: 12px; background: rgba(255,200,0,0.08); display: flex; align-items: center; justify-content: center; color: #facc15; font-size: 0.8rem; }
+        .weakness-item .text { flex:1; font-size: 0.9rem; }
+        .weakness-item .badge { font-size: 0.6rem; color: #6a6a8a; background: rgba(255,255,255,0.04); padding: 2px 10px; border-radius: 20px; }
+
+        /* Recommendation cards */
+        .rec-card {
+            background: rgba(255,255,255,0.02);
+            border-radius: 18px;
+            padding: 14px 16px;
+            margin-bottom: 10px;
+            border-left: 3px solid #00d4ff;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .rec-card .rec-info { flex:1; }
+        .rec-card .rec-title { font-weight: 600; font-size: 0.95rem; }
+        .rec-card .rec-desc { font-size: 0.75rem; color: #9a9aba; }
+        .rec-card .rec-priority { font-size: 0.6rem; color: #a855f7; background: rgba(168,85,247,0.1); padding: 2px 12px; border-radius: 40px; }
+
+        /* Progress bars */
+        .progress-bar { width: 100%; height: 4px; background: rgba(255,255,255,0.04); border-radius: 10px; overflow: hidden; margin: 8px 0; }
+        .progress-bar .fill { height: 100%; border-radius: 10px; background: linear-gradient(90deg, #00d4ff, #a855f7); transition: width 0.8s; }
+
+        /* Charts placeholder */
+        .chart-placeholder {
+            height: 100px;
+            display: flex;
+            align-items: flex-end;
+            gap: 6px;
+            padding: 10px 0;
+        }
+        .chart-bar {
+            flex:1;
+            background: linear-gradient(180deg, #00d4ff, #a855f7);
+            border-radius: 6px 6px 0 0;
+            height: calc(20% + 60% * (var(--h, 0.5)));
+            min-height: 8px;
+            opacity: 0.6;
+            transition: 0.4s;
+        }
+
+        /* Upload area */
+        .upload-zone {
+            border: 2px dashed rgba(255,255,255,0.06);
+            border-radius: 24px;
+            padding: 30px 20px;
+            text-align: center;
+            color: #6a6a8a;
+            transition: 0.3s;
+            cursor: pointer;
+        }
+        .upload-zone:hover { border-color: rgba(0,212,255,0.2); background: rgba(0,212,255,0.02); }
+        .upload-zone i { font-size: 2.5rem; color: #00d4ff; opacity: 0.5; }
+        .upload-zone p { margin-top: 8px; font-size: 0.9rem; }
+
+        /* Compare section */
+        .compare-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-top: 12px;
+        }
+        .compare-card { background: rgba(255,255,255,0.02); border-radius: 18px; padding: 16px; text-align: center; }
+        .compare-card img { width: 100%; border-radius: 16px; aspect-ratio: 1/1; object-fit: cover; background: #111; }
+        .compare-card .label { font-size: 0.7rem; color: #6a6a8a; margin-top: 8px; }
+
+        /* bottom row */
+        .bottom-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+            margin-top: 24px;
+        }
+        @media (max-width: 700px) { .bottom-row { grid-template-columns: 1fr; } }
+
+        /* Responsive tweaks */
+        @media (max-width: 480px) {
+            .header { padding: 12px 18px; flex-wrap: wrap; gap: 10px; }
+            .logo { font-size: 1.4rem; }
+            .grid-dashboard { gap: 14px; }
+        }
+
+        /* Icons via FontAwesome CDN */
+        @import url('https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css');
+        /* inline fallback */
+        .fas, .far, .fab { font-family: 'Font Awesome 6 Free'; font-weight: 900; }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header glass">
+            <div class="logo">LUMINA <span>lookmax</span></div>
+            <div class="nav-icons">
+                <i class="fas fa-chart-line"></i>
+                <i class="fas fa-camera"></i>
+                <i class="fas fa-list-ul"></i>
+                <i class="fas fa-users"></i>
+                <i class="fas fa-cog"></i>
+            </div>
+            <div class="avatar">JD</div>
+        </header>
+
+        <!-- Main Dashboard -->
+        <div class="grid-dashboard">
+            <!-- Score card -->
+            <div class="card glass">
+                <div class="card-title"><span><i class="fas fa-star"></i> Overall Score</span> <span style="color:#6a6a8a; font-size:0.6rem;">updated today</span></div>
+                <div class="score-ring">
+                    <div class="ring-wrapper">
+                        <svg viewBox="0 0 160 160">
+                            <defs><linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#00d4ff"/><stop offset="100%" stop-color="#a855f7"/></linearGradient></defs>
+                            <circle class="ring-bg" cx="80" cy="80" r="70"/>
+                            <circle class="ring-fill" cx="80" cy="80" r="70" style="stroke-dashoffset: 65;"/>
+                        </svg>
+                        <div class="score-text">
+                            <span class="score-number">87.4</span>
+                            <span class="score-label">/ 100</span>
+                        </div>
+                    </div>
+                    <span class="tier-badge">✦ WORLD CLASS</span>
+                    <div style="font-size:0.8rem; color:#6a6a8a; margin-top:6px;">Better than 92% of users</div>
+                </div>
+                <div class="stat-grid" style="margin-top:14px;">
+                    <div class="stat-item"><div class="value">94</div><div class="label">Symmetry</div></div>
+                    <div class="stat-item"><div class="value">82</div><div class="label">Proportions</div></div>
+                    <div class="stat-item"><div class="value">79</div><div class="label">Skin</div></div>
+                    <div class="stat-item"><div class="value">88</div><div class="label">Harmony</div></div>
+                </div>
+            </div>
+
+            <!-- Weakness & Progress -->
+            <div class="card glass">
+                <div class="card-title"><span><i class="fas fa-exclamation-triangle"></i> Weaknesses</span> <i class="fas fa-chevron-right" style="opacity:0.3;"></i></div>
+                <div class="weakness-item"><div class="icon"><i class="fas fa-eye"></i></div><div class="text">Under-eye hollow</div><span class="badge">Critical</span></div>
+                <div class="weakness-item"><div class="icon"><i class="fas fa-jaw"></i></div><div class="text">Jaw angle &lt; 120°</div><span class="badge">High</span></div>
+                <div class="weakness-item"><div class="icon"><i class="fas fa-tint"></i></div><div class="text">Skin texture (acne scars)</div><span class="badge">Medium</span></div>
+                <div style="margin-top:16px;">
+                    <div style="display:flex; justify-content:space-between; font-size:0.75rem; color:#6a6a8a;"><span>Progress this month</span><span>+4.2 pts</span></div>
+                    <div class="progress-bar"><div class="fill" style="width:68%;"></div></div>
+                </div>
+                <div style="margin-top:12px; background:rgba(0,212,255,0.04); border-radius:16px; padding:10px 14px; font-size:0.8rem; border-left:2px solid #00d4ff;">
+                    <i class="fas fa-bullseye" style="color:#00d4ff; margin-right:8px;"></i> Next milestone: 90 – focus on jawline exercises.
+                </div>
+            </div>
+
+            <!-- Recommendations -->
+            <div class="card glass">
+                <div class="card-title"><span><i class="fas fa-check-circle"></i> Smart Picks</span> <span style="color:#6a6a8a; font-size:0.6rem;">priority order</span></div>
+                <div class="rec-card">
+                    <div class="rec-info">
+                        <div class="rec-title">Mewing protocol</div>
+                        <div class="rec-desc">Tongue posture & chin tucks – 10 min/day</div>
+                    </div>
+                    <span class="rec-priority">Critical</span>
+                </div>
+                <div class="rec-card" style="border-left-color:#a855f7;">
+                    <div class="rec-info">
+                        <div class="rec-title">Tretinoin 0.05%</div>
+                        <div class="rec-desc">Apply PM, build tolerance gradually</div>
+                    </div>
+                    <span class="rec-priority" style="color:#facc15;">High</span>
+                </div>
+                <div class="rec-card" style="border-left-color:#4ade80;">
+                    <div class="rec-info">
+                        <div class="rec-title">Chewing gum (hard)</div>
+                        <div class="rec-desc">20 min each side, increase masseter</div>
+                    </div>
+                    <span class="rec-priority" style="color:#4ade80;">Medium</span>
+                </div>
+                <div style="margin-top:10px; text-align:right;">
+                    <span style="font-size:0.7rem; color:#6a6a8a; cursor:pointer;">View all 12 recommendations →</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Second row: Upload + Compare -->
+        <div class="grid-dashboard" style="grid-template-columns: 1.2fr 0.8fr; gap:24px; margin-bottom:24px;">
+            <!-- Upload -->
+            <div class="card glass">
+                <div class="card-title"><span><i class="fas fa-upload"></i> New Analysis</span> <span style="color:#6a6a8a; font-size:0.6rem;">re-analyze every 7 days</span></div>
+                <div class="upload-zone" id="uploadZone">
+                    <i class="fas fa-camera-retro"></i>
+                    <p>Drag & drop or tap to upload</p>
+                    <p style="font-size:0.7rem; color:#4a4a5a;">Front & side profile recommended</p>
+                </div>
+                <div style="display:flex; gap:10px; margin-top:14px;">
+                    <button style="flex:1; background:rgba(0,212,255,0.08); border:1px solid rgba(0,212,255,0.2); color:#fff; border-radius:60px; padding:10px 0; font-weight:600; cursor:pointer; font-size:0.8rem;">📸 Take photo</button>
+                    <button style="flex:1; background:rgba(168,85,247,0.08); border:1px solid rgba(168,85,247,0.2); color:#fff; border-radius:60px; padding:10px 0; font-weight:600; cursor:pointer; font-size:0.8rem;">🔄 Auto-analyze</button>
+                </div>
+            </div>
+
+            <!-- Compare -->
+            <div class="card glass">
+                <div class="card-title"><span><i class="fas fa-arrows-left-right"></i> Compare</span> <i class="fas fa-plus-circle" style="cursor:pointer;"></i></div>
+                <div class="compare-grid">
+                    <div class="compare-card">
+                        <div style="background:linear-gradient(135deg,#1a1a2e,#0d0d1a); border-radius:16px; aspect-ratio:1/1; display:flex; align-items:center; justify-content:center; color:#3a3a5a; font-size:0.8rem;">Your face</div>
+                        <div class="label">Current</div>
+                        <div style="font-size:0.9rem; font-weight:600;">87.4</div>
+                    </div>
+                    <div class="compare-card">
+                        <div style="background:linear-gradient(135deg,#1a1a2e,#0d0d1a); border-radius:16px; aspect-ratio:1/1; display:flex; align-items:center; justify-content:center; color:#3a3a5a; font-size:0.8rem;">Target (AI)</div>
+                        <div class="label">Projected</div>
+                        <div style="font-size:0.9rem; font-weight:600; color:#a855f7;">94.2</div>
+                    </div>
+                </div>
+                <div style="margin-top:10px; text-align:center; font-size:0.75rem; color:#6a6a8a;">
+                    <i class="fas fa-arrow-up" style="color:#4ade80;"></i> +6.8 potential gain with 3-month plan
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom: History chart & Leaderboard -->
+        <div class="bottom-row">
+            <div class="card glass">
+                <div class="card-title"><span><i class="fas fa-chart-simple"></i> Progress History</span> <span style="color:#6a6a8a; font-size:0.6rem;">last 12 weeks</span></div>
+                <div class="chart-placeholder">
+                    <div class="chart-bar" style="--h:0.45;"></div>
+                    <div class="chart-bar" style="--h:0.50;"></div>
+                    <div class="chart-bar" style="--h:0.55;"></div>
+                    <div class="chart-bar" style="--h:0.60;"></div>
+                    <div class="chart-bar" style="--h:0.68;"></div>
+                    <div class="chart-bar" style="--h:0.72;"></div>
+                    <div class="chart-bar" style="--h:0.78;"></div>
+                    <div class="chart-bar" style="--h:0.82;"></div>
+                    <div class="chart-bar" style="--h:0.87;"></div>
+                    <div class="chart-bar" style="--h:0.85;"></div>
+                    <div class="chart-bar" style="--h:0.88;"></div>
+                    <div class="chart-bar" style="--h:0.90;"></div>
+                </div>
+                <div style="display:flex; justify-content:space-between; font-size:0.6rem; color:#4a4a5a;">
+                    <span>Jan</span><span>Feb</span><span>Mar</span><span>Apr</span>
+                </div>
+            </div>
+
+            <div class="card glass">
+                <div class="card-title"><span><i class="fas fa-trophy"></i> Leaderboard</span> <span style="color:#6a6a8a; font-size:0.6rem;">global</span></div>
+                <div style="display:flex; flex-direction:column; gap:8px;">
+                    <div style="display:flex; justify-content:space-between; background:rgba(255,215,0,0.04); border-radius:12px; padding:8px 12px; border-left:2px solid #facc15;">
+                        <span><span style="font-weight:700; color:#facc15;">#1</span> AlphaMax</span>
+                        <span style="font-weight:700;">96.8</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; background:rgba(192,192,192,0.02); border-radius:12px; padding:8px 12px;">
+                        <span><span style="font-weight:700; color:#c0c0c0;">#2</span> Chisel</span>
+                        <span style="font-weight:700;">95.2</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; background:rgba(205,127,50,0.02); border-radius:12px; padding:8px 12px;">
+                        <span><span style="font-weight:700; color:#cd7f32;">#3</span> GoldenRatio</span>
+                        <span style="font-weight:700;">94.0</span>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; border-radius:12px; padding:8px 12px; background:rgba(0,212,255,0.02);">
+                        <span><span style="font-weight:700; color:#6a6a8a;">#4</span> You</span>
+                        <span style="font-weight:700; color:#00d4ff;">87.4</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div style="margin-top:30px; text-align:center; font-size:0.6rem; color:#2a2a3a; border-top:1px solid rgba(255,255,255,0.02); padding-top:18px;">
+            LUMINA v2.4 – AI-powered facial aesthetics · Data encrypted · No affiliation with any medical institution.
+        </div>
+    </div>
+
+    <script>
+        // Interactive: upload zone click simulation
+        document.getElementById('uploadZone').addEventListener('click', function() {
+            alert('📸 Photo upload dialog would open here.\n(In production: camera or file picker)');
+        });
+
+        // Simple hover animation for chart bars
+        document.querySelectorAll('.chart-bar').forEach((bar, i) => {
+            bar.style.transitionDelay = (i * 40) + 'ms';
+            setTimeout(() => {
+                bar.style.opacity = '1';
+            }, 100 + i * 50);
+        });
+
+        // Animate score ring on load (already set offset)
+        // simulate dynamic update
+        console.log('LUMINA loaded – premium lookmaxing suite ready.');
+    </script>
+</body>
+</html>
