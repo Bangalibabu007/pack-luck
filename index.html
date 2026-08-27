@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Subscriber Generator</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; background: #1e1e1e; color: #fff; }
+        input, button { width: 100%; padding: 12px; margin: 8px 0; border: none; border-radius: 4px; }
+        input { background: #333; color: #fff; }
+        button { background: #cc0000; color: #fff; font-weight: bold; cursor: pointer; }
+        button:hover { background: #ff0000; }
+        #status { margin-top: 20px; padding: 10px; background: #2a2a2a; border-radius: 4px; white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+    <h2>YouTube Subscriber Generator</h2>
+    <input type="text" id="channelUrl" placeholder="Channel URL (e.g., https://www.youtube.com/@channel)" value="https://www.youtube.com/@target">
+    <input type="number" id="count" placeholder="Number of subscribers (max 500)" value="50" min="1" max="500">
+    <button id="startBtn">Generate Subscribers</button>
+    <div id="status">Ready.</div>
+
+    <script>
+        document.getElementById('startBtn').addEventListener('click', async function() {
+            const url = document.getElementById('channelUrl').value.trim();
+            const count = parseInt(document.getElementById('count').value) || 50;
+            const statusDiv = document.getElementById('status');
+
+            if (!url) {
+                statusDiv.textContent = 'Error: Please enter a channel URL.';
+                return;
+            }
+            if (count < 1 || count > 500) {
+                statusDiv.textContent = 'Error: Count must be between 1 and 500.';
+                return;
+            }
+
+            statusDiv.textContent = 'Starting generation... This may take a few minutes.';
+
+            try {
+                // Call Vercel serverless function (adjust endpoint to your deployed path)
+                const response = await fetch('/api/subscribe', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ channelUrl: url, count: count })
+                });
+
+                if (!response.ok) {
+                    const errText = await response.text();
+                    statusDiv.textContent = `Server error (${response.status}): ${errText}`;
+                    return;
+                }
+
+                const data = await response.json();
+                statusDiv.textContent = JSON.stringify(data, null, 2);
+            } catch (err) {
+                statusDiv.textContent = `Network error: ${err.message}`;
+            }
+        });
+    </script>
+</body>
+</html>
