@@ -1,0 +1,1 @@
+ { "builds": [ { "src": "api/subscribe.py", "use": "@vercel/python" } ], "routes": [ { "src": "/subscribe", "dest": "/api/subscribe" } ] }
